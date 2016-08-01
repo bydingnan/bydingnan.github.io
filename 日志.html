@@ -1,0 +1,3989 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>
+    
+  日志 - 
+  
+
+  </title>
+  <meta name="author" content="">
+  <meta name="description" content="">
+
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <link href="asset/css/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="asset/js/modernizr-2.0.js"></script>
+  <script src="asset/js/jquery.min.js"></script>
+  <script src="asset/highlightjs/highlight.pack.js"></script>
+  <link href="asset/highlightjs/styles/solarized_light.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <script>hljs.initHighlightingOnLoad();</script>
+
+  <style type="text/css">
+  .cat-children-p{ padding: 6px 0px;}
+  .hljs{background: none;}
+  </style>
+  <script type="text/javascript">
+  var isAddSildbar = true;
+  </script>
+  <script src="asset/js/octopress.js" type="text/javascript"></script>
+</head>
+<script type="text/javascript">
+//链接新开窗口
+function addBlankTargetForLinks () {
+  $('a[href^="http"]').each(function(){
+      $(this).attr('target', '_blank');
+  });
+}
+$(document).ready(function(event) {
+  addBlankTargetForLinks();
+});
+</script>
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="index.html"></a></h1>
+  
+    <h2></h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="index.html">Home</a></li>
+  <li><a href="archives.html">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content"> 
+<div class="blog-index">
+
+	<article>
+		 <header>
+		  	<h1 class="entry-title"><a href="14700365720801.html">HDFS集群配置、搭建、备份</a></h1>
+			<p class="meta"><time datetime="2016-08-01T15:29:32+08:00" 
+			pubdate data-updated="true">2016/8/1</time></p>
+		 </header>
+	  	<div class="entry-content">
+		  	
+		  	<p>以实际情况为例，三台机器组成的集群， 系统为Ubuntu 16.04 server版</p>
+
+<h2 id="toc_0">1 环境配置</h2>
+
+<p>搭建了一个三台机器的集群：</p>
+
+<pre><code class="language-shell">10.0.1.215  NameNode      talkmate  Talkmate123
+10.0.1.217  DataNode1     talkmate  Talkmate123
+10.0.1.219  DataNode2     talkmate  Talkmate123
+</code></pre>
+
+<p>以上三列分别为IP hostname 用户名 密码</p>
+
+<h3 id="toc_1">1.1 修改hostname</h3>
+
+<p>　　Hostname在<strong><code>/etc/hostname</code></strong>中修改，域名映射关系在<strong><code>/etc/hosts</code></strong>中修改，对于三台机器都需要修改。</p>
+
+<h3 id="toc_2">1.2 打通NameNode到DataNode节点的SSH无密码登陆</h3>
+
+<p>　　一般系统是默认安装了ssh命令的。如果没有，或者版本比较老，则可以重新安装：<br/>
+ <code>sudo apt-get install ssh</code></p>
+
+<pre><code class="language-shell">  cd ~/.ssh
+  ssh-keygen –t rsa
+  cat id_rsa.pub &gt; authorized_keys
+</code></pre>
+
+<p>　　至此可以测试一下ssh 本机IP是否需要密码，如果成功，说明本机配置成功。</p>
+
+<h3 id="toc_3">1.3 将authorized_keys文件复制到所有DataNode节点</h3>
+
+<pre><code class="language-shell">scp authorized_keys talkmate@DataNode1:/home/talkmate/.ssh/
+scp authorized_keys talkmate@DataNode2:/home/talkmate/.ssh/
+</code></pre>
+
+<p>　　至此免密码登录配置完毕，可以通过本机ssh各个节点IP来测试是否需要密码登录。</p>
+
+<h3 id="toc_4">1.4 下载Hadoop软件包，官方下载地址</h3>
+
+<p><a href="http://mirrors.cnnic.cn/apache/hadoop/common/stable/">http://mirrors.cnnic.cn/apache/hadoop/common/stable/</a><br/><br/>
+<a href="http://hadoop.apache.org/releases.html#Download">http://hadoop.apache.org/releases.html#Download</a></p>
+
+<pre><code class="language-shell">tar zxvf hadoop-2.6.4.tar.gz
+mv hadoop-2.6.4 /home/talkmate/softwares
+</code></pre>
+
+<h3 id="toc_5">1.5 配置环境变量</h3>
+
+<pre><code class="language-shell">vim ~/.bash_profile
+
+export JAVA_HOME=/home/talkmate/softwares/jdk1.8.0_91
+export HADOOP_HOME=/home/talkmate/softwares/hadoop-2.6.4
+export PATH=~/softwares/usr/bin:$JAVA_HOME/bin:$HADOOP_HOME/bin:$PATH
+</code></pre>
+
+<h2 id="toc_6">2 Hadoop配置文件</h2>
+
+<h3 id="toc_7">2.1 相关文件</h3>
+
+<p>在NameNode上修改hadoop配置文件<br/>
+主要修改<strong><code>/home/talkmate/softwares/hadoop-2.6.4/etc/hadoop/</code></strong>目录下的配置文件</p>
+
+<p><strong><code>hadoop-env.sh</code></strong>　　　Hadoop环境变量设置<br/><br/>
+<strong><code>core-site.xml</code></strong>　　　NameNode、IP和端口设置、全局设置等<br/><br/>
+<strong><code>hdfs-site.xml</code></strong>　　　HDFS数据块副本等具体参数<br/><br/>
+<strong><code>mapred-site.xml</code></strong>　　MapReduce、jobhistory、框架设置<br/><br/>
+<strong><code>yarn-env.sh</code></strong>　　　　Yarn环境变量设置<br/><br/>
+<strong><code>yarn-site.xml</code></strong>　　　Yarn框架具体设置<br/><br/>
+<strong><code>masters</code></strong>　　　　　　　主节点<br/><br/>
+<strong><code>slaves</code></strong>　　　　　　　　从节点</p>
+
+<h3 id="toc_8">2.2 core-site.xml</h3>
+
+<pre><code class="language-xml">&lt;configuration&gt;
+    &lt;property&gt;
+        &lt;name&gt;hadoop.tmp.dir&lt;/name&gt;
+        &lt;value&gt;/home/talkmate/hdfs_data/tmp&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;fs.defaultFS&lt;/name&gt;
+        &lt;value&gt;hdfs://NameNode:8020&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;io.file.buffer.size&lt;/name&gt;
+        &lt;value&gt;131072&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;fs.trash.interval&lt;/name&gt;
+        &lt;value&gt;10080&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/configuration&gt;
+</code></pre>
+
+<h3 id="toc_9">2.3 hadoop-env.sh</h3>
+
+<ul>
+<li>将配置文件中的<strong><code>export HADOOP_CONF_DIR=${HADOOP_CONF_DIR:-&quot;/etc/hadoop&quot;}</code></strong>改为<br/>
+<strong><code>export HADOOP_CONF_DIR=/home/talkmate/softwares/hadoop-2.6.4/etc/hadoop</code></strong><br/></li>
+<li>增加JAVA_HOME<br/>
+<strong><code>export JAVA_HOME=/home/talkmate/softwares/jdk1.8.0_91</code></strong></li>
+</ul>
+
+<h3 id="toc_10">2.4 yarn-env.sh</h3>
+
+<ul>
+<li>将配置文件中的<strong><code>export YARN_CONF_DIR=&quot;${YARN_CONF_DIR:-$HADOOP_YARN_HOME/conf}&quot;</code></strong>改为<br/>
+<strong><code>export YARN_CONF_DIR=/home/talkmate/softwares/hadoop-2.6.4/etc/hadoop</code></strong><br/></li>
+<li>增加JAVA_HOME<br/>
+<strong><code>export JAVA_HOME=/home/talkmate/softwares/jdk1.8.0_91</code></strong></li>
+</ul>
+
+<h3 id="toc_11">2.5 hdfs-site.xml</h3>
+
+<pre><code class="language-xml">&lt;configuration&gt;
+    &lt;property&gt;
+        &lt;name&gt;dfs.replication&lt;/name&gt;
+        &lt;value&gt;3&lt;/value&gt;                                                                                                      
+    &lt;/property&gt;                                                                                                          
+    &lt;property&gt;
+        &lt;name&gt;dfs.name.dir&lt;/name&gt;
+        &lt;value&gt;/home/talkmate/hdfs_data/name&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;dfs.data.dir&lt;/name&gt;
+        &lt;value&gt;/home/talkmate/hdfs_data/data&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;dfs.webhdfs.enabled&lt;/name&gt;
+        &lt;value&gt;true&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;dfs.namenode.checkpoint.period&lt;/name&gt;
+        &lt;value&gt;3600&lt;/value&gt;
+        &lt;description&gt;The number of seconds between two periodic checkpoints.  &lt;/description&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;fs.checkpoint.size&lt;/name&gt;
+        &lt;value&gt;67108864&lt;/value&gt;
+        &lt;description&gt;The size of the current edit log (in bytes) that triggers a periodic checkpoint even if the fs.checkpoint.period hasn&#39;t expired.  
+        &lt;/description&gt;
+    &lt;/property&gt;
+
+    &lt;property&gt;
+        &lt;name&gt;dfs.namenode.checkpoint.dir&lt;/name&gt;
+        &lt;value&gt;/home/talkmate/hdfs_data/checkpoint&lt;/value&gt;
+        &lt;description&gt;Determines where on the local filesystem the DFS secondary name node should store the temporary images to merge. If this is a comma-delimited list of directories then the image is replicated in all of the directories for redundancy.  &lt;/description&gt;
+    &lt;/property&gt;
+
+    &lt;property&gt;
+        &lt;name&gt;dfs.http.address&lt;/name&gt;
+        &lt;value&gt;NameNode:50070&lt;/value&gt;
+        &lt;description&gt;
+            The address and the base port where the dfs namenode web ui will listen on.
+            If the port is 0 then the server will start on a free port.
+        &lt;/description&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;dfs.secondary.http.address&lt;/name&gt;
+        &lt;value&gt;DataNode1:50090&lt;/value&gt;
+        &lt;description&gt;NameNode get the newest fsimage via dfs.secondary.http.address&lt;/description&gt;
+    &lt;/property&gt;
+&lt;/configuration&gt;
+</code></pre>
+
+<h3 id="toc_12">2.6 mapred-site.xml</h3>
+
+<pre><code class="language-xml">&lt;configuration&gt;
+    &lt;property&gt;
+        &lt;name&gt;mapreduce.framework.name&lt;/name&gt;
+        &lt;value&gt;yarn&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;mapreduce.jobhistory.address&lt;/name&gt;
+        &lt;value&gt;NameNode:10020&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;mapreduce.jobhistory.webapp.address&lt;/name&gt;
+        &lt;value&gt;NameNode:19888&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/configuration&gt;
+</code></pre>
+
+<h3 id="toc_13">2.7 yarn-site.xml</h3>
+
+<pre><code class="language-xml">&lt;configuration&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.nodemanager.aux-services&lt;/name&gt;
+        &lt;value&gt;mapreduce_shuffle&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.nodemanager.aux-services.mapreduce.shuffle.class&lt;/name&gt;
+        &lt;value&gt;org.apache.hadoop.mapred.ShuffleHandler&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.resourcemanager.address&lt;/name&gt;
+        &lt;value&gt;NameNode:8032&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.resourcemanager.scheduler.address&lt;/name&gt;
+        &lt;value&gt;NameNode:8030&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.resourcemanager.resource-tracker.address&lt;/name&gt;
+        &lt;value&gt;NameNode:8031&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.resourcemanager.admin.address&lt;/name&gt;
+        &lt;value&gt;NameNode:8033&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property&gt;
+        &lt;name&gt;yarn.resourcemanager.webapp.address&lt;/name&gt;
+        &lt;value&gt;NameNode:8088&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/configuration&gt;
+</code></pre>
+
+<h3 id="toc_14">2.8 masters</h3>
+
+<pre><code class="language-shell">NameNode
+</code></pre>
+
+<h3 id="toc_15">2.9 slaves</h3>
+
+<pre><code class="language-shell">DataNode1
+DataNode2
+</code></pre>
+
+<h2 id="toc_16">3 发布</h2>
+
+<h2 id="toc_17">3.1 将NameNode节点配置好的Hadoop目录复制到每一个DataNode节点上</h2>
+
+<p><strong><code>scp –r /home/talkmate/softwares/hadoop-2.6.4 DataNode1@:/home/talkmate/softwares/</code></strong><br/><br/>
+<strong><code>scp –r /home/talkmate/softwares/hadoop-2.6.4 DataNode1@:/home/talkmate/softwares/</code></strong></p>
+
+<h3 id="toc_18">3.2 在NameNode节点上格式化NameNode</h3>
+
+<pre><code class="language-shell">hadoop namenode –format
+</code></pre>
+
+<h3 id="toc_19">3.3 执行</h3>
+
+<p>运行</p>
+
+<pre><code class="language-shel">sbin/start-all.sh
+</code></pre>
+
+<p>停止</p>
+
+<pre><code class="language-shell">sbin/stop-all.sh
+</code></pre>
+
+<h3 id="toc_20">3.4 查看Hadoop工作情况</h3>
+
+<p><strong><code>http://namenode:50070/</code></strong> :  主页<br/><br/>
+<strong><code>http://namenode:8088/</code></strong>  :   jobs追踪页面<br/><br/>
+<strong><code>hadoop dfsadmin -report</code></strong> : 集群状态<br/><br/>
+<strong><code>jps</code></strong> : 节点工作情况，按目前的配置状况，正常情况应该是：</p>
+
+<p>NameNode   </p>
+
+<pre><code class="language-shell">16656 NameNode
+17347 Application
+21546 Jps
+10491 JobHistoryServer
+3870 SecondaryNameNode
+15727 ResourceManager
+</code></pre>
+
+<p>DataNode1</p>
+
+<pre><code class="language-shell">6706 Jps
+32658 DataNode
+437 NodeManager
+319 SecondaryNameNode
+</code></pre>
+
+<p>DataNode2</p>
+
+<pre><code class="language-shell">2675 NodeManager
+21124 Jps
+2543 DataNode
+</code></pre>
+
+<h2 id="toc_21">4 备份</h2>
+
+<h3 id="toc_22">4.1 相关配置</h3>
+
+<p>已经在配置文件中配置了相关字段:<br/><br/>
+<strong><code>dfs.replication</code></strong> : 每个记录保存3份<br/><br/>
+<strong><code>dfs.namenode.checkpoint.dir</code></strong>: checkpoint保存文件夹，恢复数据用<br/><br/>
+<strong><code>dfs.secondary.http.address</code></strong> :  secondary节点位置</p>
+
+<h3 id="toc_23">4.2 恢复：</h3>
+
+<p>　　若是DataNode丢失，hadoop在数据被再次使用时进行检查，如果发现少了一个备份，会进行数据恢复工作。也就是说，数据恢复是自动，这也是hadoop的强大之处。  </p>
+
+<ul>
+<li>至于NameNode的恢复，在非NameNode节点上，保存一个日志镜像secondaryNnameNode。若NameNode出现问题，将secondary namenode 存储的checkpoint数据copy到NameNode上，进行导入恢复。<br/></li>
+</ul>
+
+<pre><code class="language-shell">scp -r talkmate@DataNode1:/home/talkmate/hdfs_data/checkpoint/ .
+</code></pre>
+
+<ul>
+<li>kill掉DataNode进程</li>
+</ul>
+
+<pre><code class="language-shell">jps
+</code></pre>
+
+<ul>
+<li>删除name目录下的所有内容，但是必须保证name这个目录是存在的，然后进行恢复</li>
+</ul>
+
+<pre><code class="language-shell">hadoop namenode -importCheckpoint  
+</code></pre>
+
+<p>正常启动以后，屏幕上会显示很多log，这个时候namenode就可以正常访问了 </p>
+
+<ul>
+<li>检查文件Block的完整性 </li>
+</ul>
+
+<pre><code class="language-shell">hadoop fsck /
+
+</code></pre>
+
+<ul>
+<li><p>如果是HEALTHY，停止namenode，使用crrl+C或者会话结束 </p></li>
+<li><p>down掉的节点经过恢复后，可以直接链接进入hadoop集群，而不用重新启动集群。命令是  </p></li>
+</ul>
+
+<pre><code class="language-shell">sbin/hadoop-daemon.sh start namenode
+</code></pre>
+
+
+		</div>
+
+		
+
+	</article>
+ 
+	<article>
+		 <header>
+		  	<h1 class="entry-title"><a href="14700365205842.html">Flume配置方案、源码修改</a></h1>
+			<p class="meta"><time datetime="2016-08-01T15:28:40+08:00" 
+			pubdate data-updated="true">2016/8/1</time></p>
+		 </header>
+	  	<div class="entry-content">
+		  	
+		  	<h1 id="toc_0">一 配置</h1>
+
+<h2 id="toc_1">1.1 client端</h2>
+
+<p>client端采用avro-client的方式，定时向server发送数据，并附送headerFile，目前看这种方式更灵活，也符合数据业务的需求。</p>
+
+<p><strong>运行demo</strong></p>
+
+<pre><code class="language-shell">export JAVA_HOME=/home/talkmate/softwares/jdk1.8.0_91
+
+dir_array=(UserRegister UserLogin UserPasswordForgot UserCourseBuy) 
+
+for dir in ${dir_array[@]}
+do
+    if [ -d /home/talkmate/Deploy/daily_log/data/$dir ];then
+        rm /home/talkmate/Deploy/daily_log/data/$dir/*.COMPLETED
+        ./bin/flume-ng avro-client -H localhost -p 44444 --dirname /home/talkmate/Deploy/daily_log/data/$dir --headerFile header/$dir -D    flume.root.logger=DEBUG,console --conf conf
+        sleep 2
+    fi
+done
+</code></pre>
+
+<p><strong>headerFile demo</strong></p>
+
+<p>header/CourseInfo</p>
+
+<pre><code class="language-shell">field=CourseInfo
+</code></pre>
+
+<p><strong>conf/flume-env.sh</strong>  </p>
+
+<p>Java默认GC为20M 不设置此选项会导致内存频繁溢出，conf路径要包含在 --conf 选项中</p>
+
+<pre><code class="language-shell">26 export JAVA_OPTS=&quot;-Xms2048m -Xmx3072m -Xss256k -Xmn2g -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:-UseGCOverheadLimit&quot;
+</code></pre>
+
+<h2 id="toc_2">1.2 server端</h2>
+
+<p>接收端采用的是avro source、file channel和hdfs sink，具体配置如下</p>
+
+<pre><code class="language-shell">#初始化
+agent1.sources = source_db
+agent1.sinks = sink_CourseInfo
+agent1.channels = channel_CourseInfo
+
+#配置source
+agent1.sources.source_db.type = avro
+agent1.sources.source_db.bind = localhost
+agent1.sources.source_db.port = 55555
+agent1.sources.source_db.channels = channel_CourseInfo
+
+#根据头文件信息分发数据
+agent1.sources.source_db.selector.type = multiplexing
+agent1.sources.source_db.selector.header = field
+agent1.sources.source_db.selector.mapping.CourseInfo = channel_CourseInfo
+agent1.sources.source_db.selector.mapping.CourseInfoDetail = channel_CourseInfoDetail
+
+#hdfs sink
+agent1.sinks.sink_CourseInfo.type = hdfs
+agent1.sinks.sink_CourseInfo.hdfs.path = hdfs://NameNode:8020/talkmate/db/course_info
+agent1.sinks.sink_CourseInfo.hdfs.rollInterval = 0
+agent1.sinks.sink_CourseInfo.hdfs.fileType = DataStream
+agent1.sinks.sink_CourseInfo.hdfs.rollSize = 50000000
+agent1.sinks.sink_CourseInfo.hdfs.batchSize = 2000
+agent1.sinks.sink_CourseInfo.hdfs.rollCount = 100000
+agent1.sinks.sink_CourseInfo.hdfs.useLocalTimeStamp = true
+agent1.sinks.sink_CourseInfo.hdfs.writeFormat = Text
+agent1.sinks.sink_CourseInfo.hdfs.filePrefix = course_info
+agent1.sinks.sink_CourseInfo.hdfs.inUseSuffix = .tmp
+agent1.sinks.sink_CourseInfo.hdfs.idleTimeout = 30
+
+#file channel
+agent1.channels.channel_CourseInfo.type = file
+agent1.channels.channel_CourseInfo.checkpointDir = /home/talkmate/Deploy/fchannel/CourseInfo/checkpoint
+agent1.channels.channel_CourseInfo.dataDirs = /home/talkmate/Deploy/fchannel/CourseInfo/data
+agent1.channels.channel_CourseInfo.capacity = 1000000
+agent1.channels.channel_CourseInfo.keep-alive = 30
+agent1.channels.channel_CourseInfo.transactionCapacity = 2000
+agent1.channels.channel_CourseInfo.write-timeout = 30
+agent1.channels.channel_CourseInfo.checkpoint-timeout=600
+
+#bind sink to channel
+agent1.sinks.sink_CourseInfo.channel = channel_CourseInfo
+</code></pre>
+
+<p><strong>说明</strong>  </p>
+
+<ul>
+<li>一个event就是一条数据<br/></li>
+<li>batchSize flush的event数量<br/></li>
+<li>rollSize 文件滚动的最大上限<br/></li>
+<li>rollCount 文件滚动的最大event数量<br/></li>
+<li>idleTimeout 若无写事件，在改时间(s)后关闭文件<br/></li>
+<li>capacity 越大越好，小了会内存溢出<br/></li>
+<li>transactionCapacity 和 batchSize 最好一样大<br/></li>
+</ul>
+
+<p><strong>启动服务</strong>  </p>
+
+<pre><code class="language-shell">/bin/flume-ng agent -n agent1 -c ./conf -f ./conf/hdfs_server.conf  &gt; logs/runtime.log 2&gt;&amp;1
+</code></pre>
+
+<h1 id="toc_3">二 源码修改</h1>
+
+<h2 id="toc_4">2.1 解决乱码后传输中断问题</h2>
+
+<p>文件：<code>flume-ng-core/src/main/java/org/apache/flume/serialization/ResettableFileInputStream.java</code><br/><br/>
+函数：<code>readChar()</code>  </p>
+
+<pre><code class="language-java">216     } else {
+217         if(isEndOfInput) {
+218             incrPosition(delta, false);
+219             logger.info(&quot;End of File.&quot;);
+220             return -1;//end of file
+221         } else{
+222             incrPosition(1, false);
+223             buf.clear();
+224             buf.flip();
+225             refillBuf();
+226             logger.warn(&quot;May have special characters.&quot;);
+227             return 32;//a partial character of space
+228         }
+229     }
+</code></pre>
+
+<p>检测到异常字符不是退出，而是返回一个空格(32 的Ascii）</p>
+
+<h2 id="toc_5">2.2 解决数据单行字符长度过长导致的被截断成两行的问题</h2>
+
+<p>文件：<code>flume-ng-core/src/main/java/org/apache/flume/serialization/LineDeserializer.java</code><br/><br/>
+变量：<code>MAXLINE_DFLT</code></p>
+
+<pre><code class="language-java">53   public static final int MAXLINE_DFLT = 20480;
+</code></pre>
+
+<h2 id="toc_6">2.3 HDFS sink的文件滚动配置不生效问题</h2>
+
+<p>文件：<code>flume-ng-sinks/flume-hdfs-sink/src/main/java/org/apache/flume/sink/hdfs/AbstractHDFSWriter.java</code><br/><br/>
+函数：<code>isUnderReplicated()</code></p>
+
+<pre><code class="language-java">82   public boolean isUnderReplicated() {
+83     try {
+84       int numBlocks = getNumCurrentReplicas();
+85       if (numBlocks == -1) {
+86         return false;
+87       }
+88       int desiredBlocks;
+89       if (configuredMinReplicas != null) {
+90         desiredBlocks = configuredMinReplicas;
+91       } else {
+92         desiredBlocks = getFsDesiredReplication();
+93       }
+94       return false;
+95       //return numBlocks &lt; desiredBlocks;
+</code></pre>
+
+<h2 id="toc_7">2.3 自定义HDFS文件后缀的Index</h2>
+
+<p>文件：<code>flume-ng-sinks/flume-hdfs-sink/src/main/java/org/apache/flume/sink/hdfs/BucketWriter.java</code></p>
+
+<pre><code class="language-java">117   AtomicInteger renameTries = new AtomicInteger(0);
+</code></pre>
+
+<h2 id="toc_8">2.4 avro-client 参数设置</h2>
+
+<p>文件：<code>flume-ng-core/src/main/java/org/apache/flume/client/avro/AvroCLIClient.java</code></p>
+
+<pre><code class="language-java">56   private static final int BATCH_SIZE = 200;
+57   private static final int MAX_LINE_LENGTH = 20480;
+</code></pre>
+
+<h2 id="toc_9">2.5 时间戳解析优化</h2>
+
+<p>文件：<code>flume-ng-sinks/flume-hdfs-sink/src/main/java/org/apache/flume/sink/hdfs/HDFSEventSink.java</code>  </p>
+
+<p>import</p>
+
+<pre><code class="language-java">33 import java.text.SimpleDateFormat;
+</code></pre>
+
+<p>定义两个时间变量</p>
+
+<pre><code class="language-java">144     private SimpleDateFormat sdfPath = null;        //for file in hdfs path
+145     private SimpleDateFormat sdfName = null;        //for file name prefix
+</code></pre>
+
+<p>configure函数</p>
+
+<pre><code class="language-java">206     filePathFormat =  context.getString(&quot;hdfs.path.format&quot;, &quot;yyyyMMdd&quot;);        //time&#39;s format ps:&quot;yyyy-MM-dd&quot;
+207     sdfPath = new SimpleDateFormat(filePathFormat);
+208
+209     fileName = context.getString(&quot;hdfs.filePrefix&quot;, defaultFileName);
+210     fileNameFormat = context.getString(&quot;hdfs.filePrefix.format&quot;, &quot;HHmm&quot;);
+211     sdfName = new SimpleDateFormat(fileNameFormat);
+212
+213     addSaveTime = context.getBoolean(&quot;hdfs.addSaveTime&quot;, false);     //是否在hdfs文件中加入小时
+</code></pre>
+
+<p>增加获取时间格式函数</p>
+
+<pre><code class="language-java">376   public String getTime(String type, long timestamp) {
+377       String time = &quot;&quot;;
+378       if(type.equals(&quot;name&quot;))
+379           time = sdfName.format(timestamp);
+380       else if(type.equals(&quot;path&quot;))
+381           time = sdfPath.format(timestamp);
+382       return time;
+383   }
+</code></pre>
+
+<p>process()函数 修改重命名bucket</p>
+
+<pre><code class="language-java">411         String realPath = filePath;
+412         String realName = fileName;
+413         realPath += DIRECTORY_DELIMITER + getTime(&quot;path&quot;, System.currentTimeMillis());
+414         if (addSaveTime) {
+415             realName += &quot;.&quot; + getTime(&quot;name&quot;, System.currentTimeMillis());
+416         }
+</code></pre>
+
+<h2 id="toc_10">2.6 编译</h2>
+
+<pre><code class="language-shell">mvn install -DskipTests -Dtar
+</code></pre>
+
+<p>生成结果</p>
+
+<pre><code class="language-shell">apache-flume-1.6.0-src/flume-ng-dist/target/
+</code></pre>
+
+<h1 id="toc_11">三 部署脚本</h1>
+
+<h2 id="toc_12">3.1 daily_log</h2>
+
+<pre><code class="language-shell"> 20 scp dingnan@test.200h.com:/var/log/daily_log/last_timestamp .
+ 21 saved_timestamp=`cat saved_timestamp`
+ 22 last_timestamp=`cat last_timestamp`
+ 23 categary_map=()
+ 24 dir_map=()
+ 25
+ 26 if [ $last_timestamp -gt $saved_timestamp ];then
+ 27     scp dingnan@test.200h.com:/var/log/daily_log/*$last_timestamp* raw_data/
+ 28     #更新timestamp
+ 29     echo $last_timestamp &gt; saved_timestamp
+ 30 fi
+ 31
+ 32 index=0
+ 33 for line in `cat mapping_file`
+ 34 do
+ 35     categary=`echo $line | cut -d &quot;_&quot; -f 1,2`
+ 36     dir_name=`echo $line | cut -d &quot;_&quot; -f 3`
+ 37     categary_map[$index]=$categary
+ 38     dir_map[$index]=$dir_name
+ 39     ((index++))
+ 40 done
+ 41
+ 42 #parse
+ 43 for file_name in `ls raw_data`
+ 44 do
+ 45     categary=`echo $file_name | cut -d &quot;_&quot; -f 1,2`
+ 46     index=0
+ 47     for cate in ${categary_map[@]}
+ 48     do
+ 49         if [ &quot;$cate&quot; == &quot;$categary&quot; ];then
+ 50             path=data/${dir_map[$index]}
+ 51
+ 52             if [ ! -d $path ];then
+ 53                 mkdir -p $path
+ 54             fi
+ 55             sed &#39;s/\[\^A\]/\t/g&#39; raw_data/$file_name &gt; $path/$file_name
+ 56             break
+ 57         else
+ 58             ((index++))
+ 59         fi
+ 60     done
+ 61 done
+</code></pre>
+
+<p>如要解决ssh连接访问慢的问题，在ssh连接的一方，配置中关闭GSSAPIAuthentication  </p>
+
+<p>/etc/ssh/ssh_config</p>
+
+<pre><code class="language-shell">GSSAPIAuthentication no
+</code></pre>
+
+
+		</div>
+
+		
+
+	</article>
+ 
+	<article>
+		 <header>
+		  	<h1 class="entry-title"><a href="14700359952396.html">HDFS数据表Schema</a></h1>
+			<p class="meta"><time datetime="2016-08-01T15:19:55+08:00" 
+			pubdate data-updated="true">2016/8/1</time></p>
+		 </header>
+	  	<div class="entry-content">
+		  	
+		  	<h2 id="toc_0">一、基础数据表</h2>
+
+<h3 id="toc_1">1 用户基础信息表(UserBasicInfo)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>NickName</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>TalkmateID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>性别</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>年龄</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>电话</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>email</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>精通语言</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>9</td>
+<td>国家</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>IP</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>描述</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>12</td>
+<td>是否有头像</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>13</td>
+<td>爱好</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>14</td>
+<td>已加入班组</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>15</td>
+<td>登录次数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>16</td>
+<td>注册时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>17</td>
+<td>第三方登录渠道</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>18</td>
+<td>最后登录时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>19</td>
+<td>active</td>
+<td>INT</td>
+<td>0/1</td>
+<td></td>
+</tr>
+<tr>
+<td>20</td>
+<td>信息是否完善</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>21</td>
+<td>是否验证邮箱</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>22</td>
+<td>正在学的语言</td>
+<td>String</td>
+<td>语言:模式</td>
+<td>数组</td>
+</tr>
+<tr>
+<td>23</td>
+<td>剩余金币数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_2">2 课程基础信息表(CourseInfo)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td>UZB</td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td>Basic</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>课程模块名称</td>
+<td>String</td>
+<td>乌兹别克语教程</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>应用地区</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>5</td>
+<td>描述</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Lesson数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>所需金币数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>购买次数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>收藏次数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>是否被推荐</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>课程状态</td>
+<td>String</td>
+<td>open、close</td>
+<td></td>
+</tr>
+<tr>
+<td>12</td>
+<td>课程类型</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_3">3 课程内容基础信息表(CourseInfoDetail)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td>ENG</td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td>Basic</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>LevelID</td>
+<td>String</td>
+<td>Level1</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>UnitID</td>
+<td>String</td>
+<td>Unit1</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>LessonID</td>
+<td>String</td>
+<td>Chapter1</td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>PartID</td>
+<td>String</td>
+<td>A8是作业</td>
+<td>Slide_type</td>
+</tr>
+<tr>
+<td>7</td>
+<td>SlideID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>FormID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Slide内容类型</td>
+<td>String</td>
+<td>speakToImg</td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>Slide难度</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>内容</td>
+<td>String</td>
+<td>She is a girl.</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_4">4 课程学习进度表(UserCourseProgress)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td>ENG</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td>Basic</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td>chapter</td>
+</tr>
+<tr>
+<td>7</td>
+<td>已解锁内容</td>
+<td>String</td>
+<td>json</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_5">5 课程学习记录表(UserCourseRecord)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td>ENG</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td>Basic</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td>chapter</td>
+</tr>
+<tr>
+<td>7</td>
+<td>已学习Forms</td>
+<td>String</td>
+<td>json</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_6">6 班组基础信息表(GroupInfo)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>CreatorID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Group名称</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td></td>
+<td>ENG-Basic</td>
+</tr>
+<tr>
+<td>6</td>
+<td>个人介绍</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>标签ID</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>8</td>
+<td>教材内容</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>9</td>
+<td>开始时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>结束时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>创建时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>12</td>
+<td>人数限制</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>13</td>
+<td>成员</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>14</td>
+<td>班组说明</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>15</td>
+<td>是否删除</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>16</td>
+<td>是否推荐</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>17</td>
+<td>教育目标</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_7">7 班组成员信息表(GroupMembers)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>role</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>is_del</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_8">8 用户推送作业表(UserPushHomework)-周</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>HomeworkID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>推送依据</td>
+<td>INT</td>
+<td>课程、精通语言</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>是否批改</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>创建时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="toc_9">二、注册登录日志表(001)</h2>
+
+<h3 id="toc_10">1 用户注册日志(UserRegister)(0001)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>注册方式</td>
+<td>String</td>
+<td>email/phonenumber</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>注册方式内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>昵称</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>擅长语言</td>
+<td>String</td>
+<td></td>
+<td>数组</td>
+</tr>
+<tr>
+<td>6</td>
+<td>想学习的语言</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>设备类型</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>是否第三方</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>第三方来源</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>IP</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>注册时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_11">2 用户登录日志(UserLogin)(0010)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>登录方式</td>
+<td>String</td>
+<td>email/phonenumber</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>登录方式内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>设备类型</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>是否第三方</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>第三方来源</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>IP</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>登录时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_12">3 用户绑定/解绑日志(UserBindActivity)(0011)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>行为</td>
+<td>String</td>
+<td>bind/unbind</td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>方式</td>
+<td>String</td>
+<td>手机/邮箱</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_13">2 用户打开APP(UserOpenApp)(0100)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>设备类型</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>IP</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>登录时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="toc_14">三、课程业务日志表(010)</h2>
+
+<h3 id="toc_15">1 用户购买课程日志(UserCourseBuy)(0001)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>消耗金币数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>是否购买成功</td>
+<td>String</td>
+<td>Y/N</td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_16">2 用户搜索课程日志(UserCourseSearch)(0010)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>搜索内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_17">3 用户删除课程日志(UserCourseDelete)(0011)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>删除时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_18">4 用户切换模式日志(UserCourseModeSwitch)(0100)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>课程语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>课程模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>切换到模式</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>操作时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_19">5 用户学前测试结果日志(UserPreLearnTestResult)(0101)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>语言表达得分</td>
+<td>String</td>
+<td></td>
+<td>expression</td>
+</tr>
+<tr>
+<td>5</td>
+<td>综合应用得分</td>
+<td>String</td>
+<td></td>
+<td>apply</td>
+</tr>
+<tr>
+<td>6</td>
+<td>母语思维得分</td>
+<td>String</td>
+<td></td>
+<td>thinking</td>
+</tr>
+<tr>
+<td>7</td>
+<td>句子理解得分</td>
+<td>String</td>
+<td></td>
+<td>sentence</td>
+</tr>
+<tr>
+<td>8</td>
+<td>语言逻辑得分</td>
+<td>String</td>
+<td></td>
+<td>logic</td>
+</tr>
+<tr>
+<td>9</td>
+<td>语言解锁级别</td>
+<td>String</td>
+<td>level</td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>测试时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_20">6 用户学前测试详情日志(UserPreLearnTestResultDetail)(TODO)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>测试ID</td>
+<td>BIGINT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>SlideID</td>
+<td>BIGINT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>是否答对</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>测试时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_21">7 用户单元测试结果日志(UserUnitTestResult)(0111)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>语言表达得分</td>
+<td>INT</td>
+<td></td>
+<td>expression</td>
+</tr>
+<tr>
+<td>7</td>
+<td>综合应用得分</td>
+<td>INT</td>
+<td></td>
+<td>apply</td>
+</tr>
+<tr>
+<td>8</td>
+<td>母语思维得分</td>
+<td>INT</td>
+<td></td>
+<td>thinking</td>
+</tr>
+<tr>
+<td>9</td>
+<td>句子理解得分</td>
+<td>INT</td>
+<td></td>
+<td>sentence</td>
+</tr>
+<tr>
+<td>10</td>
+<td>语言逻辑得分</td>
+<td>INT</td>
+<td></td>
+<td>logic</td>
+</tr>
+<tr>
+<td>11</td>
+<td>语言表达总分</td>
+<td>INT</td>
+<td></td>
+<td>expression_total</td>
+</tr>
+<tr>
+<td>12</td>
+<td>综合应用总分</td>
+<td>INT</td>
+<td></td>
+<td>apply_total</td>
+</tr>
+<tr>
+<td>13</td>
+<td>母语思维总分</td>
+<td>INT</td>
+<td></td>
+<td>thinking_total</td>
+</tr>
+<tr>
+<td>14</td>
+<td>句子理解总分</td>
+<td>INT</td>
+<td></td>
+<td>sentence_total</td>
+</tr>
+<tr>
+<td>15</td>
+<td>语言逻辑总分</td>
+<td>INT</td>
+<td></td>
+<td>logic_total</td>
+</tr>
+<tr>
+<td>16</td>
+<td>测试总分</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>17</td>
+<td>测试时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_22">8 用户单元测试详情日志(UserUnitTestResultDetail)(TODO)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>测试ID</td>
+<td>BIGINT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>FormID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>SlideID</td>
+<td>INT</td>
+<td>体现内容间的先后顺序</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>是否答对</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>测试时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_23">9 用户学习结果日志(UserLearnResult)(TODO)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>PartID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>用户当前学习模式</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>获得金币数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>获得经验数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>完成时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_24">10 用户学习详情日志(UserLearnResultDetail)(1010)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>PartID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>SlideID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>FormID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>是否答对</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>完成时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_25">11 用户每日金币日志(UserCoinChange)(1011)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>增加或减少</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>变化数量</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>变化事件</td>
+<td>String</td>
+<td>学习、游戏、完善个人资料、购买课程、充值</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>事件描述</td>
+<td>String</td>
+<td>CourseID</td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_26">12 用户作业提交日志(UserHomeworkSubmit)(1100)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>HomeworkID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>PartID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>SlideID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>FormID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>内容</td>
+<td>String</td>
+<td>sentence、url</td>
+<td></td>
+</tr>
+<tr>
+<td>12</td>
+<td>类型</td>
+<td>String</td>
+<td>character、sound</td>
+<td></td>
+</tr>
+<tr>
+<td>13</td>
+<td>提交时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_27">13 用户作业批改日志(UserHomeworkModify)(1101)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>批改者ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>HomeworkID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>批改行为</td>
+<td>String</td>
+<td>点赞、语音、文字</td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>批改时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="toc_28">四、班组业务日志表(011)</h2>
+
+<h3 id="toc_29">1 创建班组日志(GroupCreate)(0001)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>老师ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>创建时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_30">2 加入班组日志(UserJoinGroup)(0010)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>申请时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_31">3 退出班组日志(UserExitGroup)(0011)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>退出时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_32">4 加入班组审核日志(GroupAudit)(0100)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>老师ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>审核结果</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>审核时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_33">5 班组搜索日志(UserGroupSearch)(0101)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>搜索内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>操作时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_34">6 班组解散日志(GroupDestroy)(0110)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>老师ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>操作时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_35">7 督促学习日志(GroupRemindLearn)(0111)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>老师ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>督促时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_36">8 班组删除学生日志(GroupRemoveStudent)(1000)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>老师ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>删除时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_37">9 班组学习结果日志(UserGroupLearnResult)(TODO)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>PartID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>获得金币数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>获得经验数</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>完成时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_38">10 班组学习详情日志(UserGroupLearnResultDetail)(1010)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>学生ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>PartID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>SlideID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>FormID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>是否答对</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>完成时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_39">11 创建晨读日志(GroupMorningReadingCreate)(1011)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>老师ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>晨读ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>开始时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>创建时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_40">12 学生晨读日志(UserMorningReadingActivity)(1100)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>晨读ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>跟读ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>跟读类型</td>
+<td>String</td>
+<td>comment sound</td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>跟读内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>晨读时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_41">13 晨读评论日志(GroupMorningReadingComment)(1101)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>晨读ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>被评论人ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>跟读ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>评论类型</td>
+<td>String</td>
+<td>comment praise sound</td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>评论内容</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>批改时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_42">14 班组作业提交日志(UserGroupHomeworkSubmit)(1110)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>HomeworkID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>LessonID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>9</td>
+<td>PartID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>10</td>
+<td>SlideID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>11</td>
+<td>FormID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>12</td>
+<td>内容</td>
+<td>String</td>
+<td>sentence、url</td>
+<td></td>
+</tr>
+<tr>
+<td>13</td>
+<td>类型</td>
+<td>String</td>
+<td>character、sound</td>
+<td></td>
+</tr>
+<tr>
+<td>14</td>
+<td>提交时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_43">15 班组单元测试结果日志(UserGroupUnitTestResult)(1111)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Course语言ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Course模块ID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>5</td>
+<td>LevelID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>6</td>
+<td>UnitID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>语言表达得分</td>
+<td>INT</td>
+<td></td>
+<td>expression</td>
+</tr>
+<tr>
+<td>8</td>
+<td>综合应用得分</td>
+<td>INT</td>
+<td></td>
+<td>apply</td>
+</tr>
+<tr>
+<td>9</td>
+<td>母语思维得分</td>
+<td>INT</td>
+<td></td>
+<td>thinking</td>
+</tr>
+<tr>
+<td>10</td>
+<td>句子理解得分</td>
+<td>INT</td>
+<td></td>
+<td>sentence</td>
+</tr>
+<tr>
+<td>11</td>
+<td>语言逻辑得分</td>
+<td>INT</td>
+<td></td>
+<td>logic</td>
+</tr>
+<tr>
+<td>12</td>
+<td>语言表达总分</td>
+<td>INT</td>
+<td></td>
+<td>expression_total</td>
+</tr>
+<tr>
+<td>13</td>
+<td>综合应用总分</td>
+<td>INT</td>
+<td></td>
+<td>apply_total</td>
+</tr>
+<tr>
+<td>14</td>
+<td>母语思维总分</td>
+<td>INT</td>
+<td></td>
+<td>thinking_total</td>
+</tr>
+<tr>
+<td>15</td>
+<td>句子理解总分</td>
+<td>INT</td>
+<td></td>
+<td>sentence_total</td>
+</tr>
+<tr>
+<td>16</td>
+<td>语言逻辑总分</td>
+<td>INT</td>
+<td></td>
+<td>logic_total</td>
+</tr>
+<tr>
+<td>17</td>
+<td>测试总分</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>18</td>
+<td>测试时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="toc_44">四、操作记录表(TODO)</h2>
+
+<h3 id="toc_45">1 课程搜索结果点击日志(CourseSearchClickRecord)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>CourseID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>点击时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_46">2 学习页设置功能点击日志(ConfigButtonClickRecord）</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>UserID</td>
+<td>INT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>设置项</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>点击时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="toc_47">3 班组搜索点击日志(GroupSearchClickRecord)</h3>
+
+<p><strong>Schema</strong></p>
+
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>列名</th>
+<th>类型</th>
+<th>描述</th>
+<th>备注</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>GroupID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td>UserID</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td>点击时间</td>
+<td>String</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+
+
+		</div>
+
+		
+
+	</article>
+  
+	<div class="pagination">
+	
+<a href="archives.html">Blog Archives</a>
+	 
+	    
+	</div>
+</div>
+ <aside class="sidebar"> 
+
+	<section>
+	  <h1>Categories</h1>
+	  <ul id="recent_posts">
+	  
+	      <li class="post">
+	        <a href="%E7%AC%94%E8%AE%B0.html"><strong>笔记&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	  
+	      <li class="post">
+	        <a href="%E6%97%A5%E5%BF%97.html"><strong>日志&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	   
+	  </ul>
+	</section>
+	<section>
+	  <h1>Recent Posts</h1>
+	  <ul id="recent_posts">
+	  
+	      
+		      <li class="post">
+		        <a href="14700365720801.html">HDFS集群配置、搭建、备份</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700365205842.html">Flume配置方案、源码修改</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700364668003.html">基于HTK的孤立词无监督识别</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700359952396.html">HDFS数据表Schema</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700356814047.html">基于HTK的孤立词有监督识别</a>
+		      </li>
+	     
+	  
+	      
+	   
+	  </ul>
+	</section>
+	
+</aside> </div></div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 -  -
+  <span class="credit">Powered by <a target="_blank" href="http://www.mweb.im">MWeb</a> &nbsp;&nbsp; Theme by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+
+
+
+</body>
+</html>

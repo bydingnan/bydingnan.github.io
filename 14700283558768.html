@@ -7,7 +7,7 @@
   <meta charset="utf-8">
   <title>
     
-  hello - 
+  Kaldi 笔记 - 
   
 
   </title>
@@ -78,11 +78,923 @@ $(document).ready(function(event) {
 <div>
 	<article class="hentry" role="article">
 	<header>
-			  	<h1 class="entry-title">hello</h1>
+			  	<h1 class="entry-title">Kaldi 笔记</h1>
 				<p class="meta"><time datetime="2016-08-01T13:12:35+08:00" pubdate data-updated="true">2016/8/1</time></p>
 			 </header>
 		  	<div class="entry-content">
-			  	
+			  	<h2 id="toc_0">一、基本数据结构</h2>
+
+<ol>
+<li>数据准备
+
+<ol>
+<li>需要手动创建的文件
+
+<ol>
+<li><strong>data/train_yesno/text</strong><br/>
+
+<ol>
+<li>每行两项，第一项是发音编号（utterance-id），第二项是文本内容，不需要保证每个词都在词典中，因为词典之外的词会映射到data/lang/oov.txt</li>
+</ol></li>
+<li><strong>data/train_yesno/wav.scp</strong>
+
+<ol>
+<li>格式：<recording-id> &lt;文件路径+名称&gt;，其实就是标记输入</li>
+</ol></li>
+<li><strong>data/train_yesno/utt2spk</strong>
+
+<ol>
+<li>格式：<utterance-id> <speaker-id> 每个话对应的人的id，也就是说可以训练针对某人的语音模型</li>
+<li>其他</li>
+<li>注意：Kaldi 的I/O框架采用fseek()读取，因此所有字典、映射文件需要排序，否则会发生错误，因此确保locale设置为export LC_ALL=C，保持统一</li>
+</ol></li>
+</ol></li>
+<li>不需要手动创建的文件<br/>
+
+<ol>
+<li><strong>data/train_yesno/spk2utt</strong>
+
+<ol>
+<li>格式：<speaker-id> <utterance-id1> <utterance-id2> ，通过local/prepare_data.sh:<strong>utils/utt2spk_to_spk2utt.pl</strong>创建，实际是uut2spk的倒排</li>
+</ol></li>
+<li><strong>data/train_yesno/feats.scp</strong>
+
+<ol>
+<li>格式：<utterance-id> <extended-filename-of-features> 每一个特征文件保存的都是Kaldi格式的矩阵。在这个例子中,矩阵的维度是13，即列数; 行数则和文件长度有关,标准情况下帧长 20ms,帧移 10ms,所以一行特征数对应10ms的音频数据。</li>
+<li>**/home/talkmate/space/KALDI/kaldi/egs/yesno/s5/mfcc/raw_mfcc_train_yesno.1.ark:16 <strong>的意思是打开archive文件/home/talkmate/space/KALDI/kaldi/egs/yesno/s5/mfcc/raw_mfcc_train_yesno.1.ark并 fseek()到第16字节开始读取</strong>。**</li>
+</ol></li>
+<li><strong>data/train_yesno/cmvn.scp</strong>
+
+<ol>
+<li>包含倒谱均值和方差统计量</li>
+</ol></li>
+<li>其他</li>
+</ol></li>
+<li>lang目录的建立，<strong>utils/prepare_lang.sh</strong>, 几个关键文件：
+
+<ol>
+<li>oov.txt:不包含在词典中的词</li>
+<li>lexicon.txt：词典文件</li>
+<li>topo：HMM模型的拓扑结构</li>
+<li>silence.txt：静音词</li>
+<li>nonsilence.txt：非静音词</li>
+<li>phones.txt：音素</li>
+<li>words.txt：词</li>
+<li>L.fst： fst格式的词典映射</li>
+</ol></li>
+</ol></li>
+<li>特征提取
+
+<ol>
+<li>steps/make_mfcc.sh</li>
+<li>steps/compute_cmvn_stats.sh</li>
+</ol></li>
+<li>准备lang
+
+<ol>
+<li>utils/prepare_lang.sh</li>
+<li>utils/format_lm.sh language model  生成G.fst</li>
+</ol></li>
+<li><p>建模</p>
+
+<ol>
+<li><p>train_mono.sh</p>
+
+<ol>
+<li>依据之前计算的cmvn，处理特征feature， ark,s,cs ： ark格式，sort，并保证按排序的顺序调用
+
+<ol>
+<li>--utt2spk: 默认是按每条utterance处理，如果增加了utt2spk选项，则按照每个speaker处理</li>
+<li>add-deltas : 训练数据增加差分量，比如13维度mfcc处理后变成39维</li>
+</ol></li>
+<li>gmm-init-mono：初始化，通过之前的特征处理、抽取特征子集、topo、特征维度等输入，训练出0.mdl和tree<br/>
+
+<ol>
+<li>draw-tree data/lang/phones.txt exp/mono/tree | dot -Tps -Gsize=8,10.5 | ps2pdf - ~/tree.pdf可以看到数的结构</li>
+<li><img src="http://10.0.1.215/markdown/kaldi_tree" alt=""/><br/></li>
+</ol></li>
+<li><p>compile-train-graphs：生成训练图， 最小单位是状态，我理解就是帧，帧的状态转移构成音素，就是一个基本的HMM，然后复制成三份、更新、配和混合高斯分布，生成一个三音素的HMM</p>
+
+<ol>
+<li>通过初试模型0.mdl、tree、L.fst生成解码图fst.JOB.gz，其中text又words.txt转换为INT索引方式</li>
+<li>这样，每句话转换成一个FST结构，输入是音素，输出是句子</li>
+<li>fstcopy &#39;ark:gunzip -c exp/mono0a/graphs.fsts.gz|&#39; ark,t:-<br/>
+fcompile 1 1.fst<br/>
+fstdraw 1.fst 1.dot<br/>
+dot -Tps -Gsize=8,10.5 1.dot | ps2pdf - 1.pdf
+4.<img src="http://10.0.1.215/markdown/kaldi_fst.png" alt=""/></li>
+</ol></li>
+<li><p>align-equal-compiled</p>
+
+<ol>
+<li> Write an equally spaced alignment (for getting training started)Usage:  align-equal-compiled <graphs-rspecifier> <features-rspecifier> <alignments-wspecifier>  <strong>e.g.</strong> : align-equal-compiled 1.fsts scp:train.scp ark:equal.ali</li>
+<li>对解码图做等距解码对齐，这个只在更新模型前做一次</li>
+</ol></li>
+<li><p><strong>gmm-acc-stats-ali：对齐</strong>  </p>
+
+<ol>
+<li>Accumulate stats for GMM training.   <strong>Viterbi 1-best path，相当于E。</strong></li>
+<li>计算模型的acc，也就是根据对齐的信息，计算每个高斯分布的均值和方差</li>
+</ol></li>
+<li><p><strong>gmm-est： update</strong>  </p>
+
+<ol>
+<li> Estimate SGMM model parameters from accumulated stats. 相当于M<br/></li>
+<li> 这里的--min-gaussian-occupancy=3参数很重要，因为这里只是指定了混合高斯总数的上限，不指定单个音素的高斯下限会丢失稀疏音素，无法保证正确对齐<br/></li>
+<li>--mix-up指定高斯总数，前面通过gmm-info计算出来的</li>
+</ol></li>
+<li><p>gmm-sum-accs 计算累计误差，把多个JOB的累加</p>
+
+<ol>
+<li>生成1.mdl</li>
+</ol></li>
+<li><p>进入模型迭代x:</p>
+
+<ol>
+<li>gmm-align-compiled 通过模型来对齐特征，不是每次都做
+
+<ul>
+<li>关键参数 --beam 和 --retry-beam，在Viterbi剪枝时用，如果用—beam没有到结束状态，再用--retry-beam试一次，不行就放弃</li>
+</ul></li>
+<li>gmm-boost-silence 修改GMM的权重，来调整指定silence音素模型的概率，如果silence和其他模型共享GMM权重，共享的所有模型都会修改</li>
+<li>gmm-acc-stats-ali</li>
+<li>gmm-est</li>
+</ol></li>
+</ol></li>
+<li><p>train_deltas.sh   训练三音素模型</p>
+
+<ol>
+<li>脚本的后面与单因素模型类似，前面增加了合并、建树的过程
+
+<ol>
+<li>N: context-width，P: central-position<br/>
+N代表上下文相关音素窗的宽度,P表示指定中心音素。正常的P是窗的中心(因此名字叫中心位置);举个例子,当 N=3,中心位置就是 P=1,但是你可以 自由的选择0到 N-1中的任何值;比如,P=2和 N=3表示有2个音素在左边的上下 文,而右边没有上下文。</li>
+<li>build-tree 建树，需要三个东西：
+
+<ol>
+<li>统计量: 通过程序 acc-tree-stats 得到 然后 sum-tree-stats</li>
+<li>questions：通过cluster-phones 得到</li>
+<li>根文件：utils/prepare_lang.sh文件里有生成</li>
+</ol></li>
+</ol></li>
+<li>相关脚本（按顺序）
+
+<ol>
+<li><strong>cluster-phones :  Cluster phones (or sets of phones) into sets for various purposes.</strong> e.g.: <strong>cluster-phones 1.tacc phonesets.txt questions.txt</strong></li>
+<li><strong>compile-questions :</strong> e.g.: <strong>compile-questions questions.txt questions.qst</strong></li>
+<li><strong>build-tree: Train decision tree.</strong> e.g.: <strong>build-tree treeacc roots.txt 1.qst topo tree</strong>
+
+<ol>
+<li>注意，我们在建立决策树时，是对每个音素的每个状态都建立一个决策树，而不是只对某一个音素来建立。
+-<img src="http://10.0.1.215/markdown/kaldi_decisiontree.png" alt=""/></li>
+<li>题集都是根据声学和语音学特征提出来的</li>
+<li>如上就完成了参数绑定</li>
+</ol></li>
+<li><strong>gmm-init-model :</strong> Initialize GMM from decision tree and tree stats，<strong>注意，不同于 gmm-init-nomo</strong></li>
+<li><strong>gmm-mixup :</strong> Does GMM mixing up (and Gaussian merging)，重新确定高斯数量</li>
+<li><strong>convert-ali ：</strong> Convert alignments from one decision-tree/model to another。树变了，重新对齐</li>
+</ol></li>
+</ol></li>
+<li><p>补充</p>
+
+<ol>
+<li>ark,s,cs:apply-cmvn
+
+<ol>
+<li>Read archive (sorted) from stdin。  “s” asserts archive is sorted, “cs” asserts  it will be called in sorted order. </li>
+</ol></li>
+<li><p>add-deltas  </p>
+
+<ol>
+<li>训练数据增加差分量，比如13维度mfcc处理后变成39维度</li>
+<li>相对于 lda而言，两种feature格式之一</li>
+<li><p>生成arpa就是 特定场景下，语言模型的先验概率</p>
+
+<pre><code>    ```shell
+    \data  
+    ngram 1=nr # 一元语言模型  
+    ngram 2=nr # 二元语言模型  
+    ngram 3=nr # 三元语言模型  
+
+    \1-grams:  
+    pro_1 word1 back_pro1  
+
+    \2-grams:  
+    pro_2 word1 word2 back_pro2  
+
+    \3-grams:  
+    pro_3 word1 word2 word3  
+
+    \end
+    ```
+</code></pre></li>
+</ol></li>
+<li><p>fstisstochastic  </p>
+
+<ol>
+<li>Checks whether an FST is stochastic and exits with success if so. Prints out maximum error (in log units).</li>
+<li>保持随机性在某方面,也就是说首先,对于 G,所有状态中最小和最大的, 以及这些状态的出弧概率与最后的概率的和。这是我们程序&quot;fstisstochastic&quot;能实现的。如果G是随机的,所有的这些数字就都是 1(从程序中看到是 0,因为我们在log空间中执行的操作;这里是log半环)</li>
+</ol></li>
+<li><p>WFST(weighted finite-state transducer)相关</p>
+
+<ol>
+<li>Composition
+
+<ol>
+<li>WFST中最最重要的算法，它将两个不同级的WFST进行组合，举个例子，语音识别中发音词典的WFST是音素对词的映射，而语言模型的WFST是词对受语法约束的词的映射，那么两个WFST进行Composition后就变成了音素对受语法约束的词的映射。那么其实语音识别的WFST的最基本的框架也很简单，就是HCLG四个不同级的WFST进行依次Composition最后形成了HMM的状态对受语法约束的词的映射。</li>
+</ol></li>
+<li><p>epsilon removal</p>
+
+<ol>
+<li>epsilon removal是用来去除空转移（组合之后产生了一些空的状态转移，WFST中输入标签和输出标签都为空时才算）的操作，如果不进行这一步而直接进行determinzation的话也是可以的，因为我们把空符号当作一个regular的符号，但是这样的结果也不是确定的。
+-<img src="http://10.0.1.215/markdown/fst_epsilon.png" alt=""/></li>
+<li>结合上图的例子，0状态的epsilon closure是{1,2}，源状态就是0，对于1状态，它到3状态的转移为c不为空，则新生成的转移就是从0状态到3状态，标签为c，权重为0到1和1到3的权重相加（对tropical半环）；同样对2状态来说，它到4状态的转移为a不为空，到5状态的转移为b也不为空，则可以新生成两条转移，分别是0状态到4状态标签为a和0状态到5状态标签为b，权重也是累加。</li>
+</ol></li>
+<li><p>determinization</p>
+
+<ol>
+<li>最重要的优化操作，它可以大大地加快运行的时间，尤其对于语音识别这么庞大的系统，它是必不可少的。</li>
+<li>当离开某个状态的转移上的输入标签相同时，采取某种机制只保留其中的一条而不影响整个系统的结果，这样离开某个状态的转移就是确定的了，因为每输入一个标签，它都会到达唯一一个确定的状态。
+-<img src="http://10.0.1.215/markdown/fst_determinization.png" alt=""/></li>
+<li>图（a）是一个基于tropical半环的WFSA，很明显它是不确定的，因为当输入a时既可以到达1状态又可以到达2状态；于是我们需要对它采取确定化操作，输入a时只保留一条转移，算法中采用了⨁操作，对于tropical半环就是取min值，所以这里保留权重为1的转移；到达状态是一个带残余权重（residual weight）的状态集合，如这里的（1,0）和（2,1），分别代表残余权重为0的状态1和残余权重为1的状态2，这个残余权重是必要的，因为它记录了之前被删除的那条权重为2的转移的信息，而且在后面的操作中还要继续传递，如后面的d/7转移（原来是d/6）。</li>
+</ol></li>
+<li><p>weight pushing</p>
+
+<ol>
+<li>形象的说，是从后向前，把权重推到前面</li>
+<li>在很多序列识别的问题中我们都是通过找到最小的cost来解决问题的，那么在WFST中我们同样就是通过找到最大或者最小的权重路径来解决问题的。 而pushing后权重都集中在前面可以降低整体的搜索时间因为我们会一步步的把我们不需要的路径排除掉，这样一开始就可以排除掉了很多种可能路径。</li>
+</ol></li>
+<li><p>minimization</p>
+
+<ol>
+<li>让WFST中的状态数最少，效果图如下所示
+-<img src="http://10.0.1.215/markdown/fst_minimization.png" alt=""/></li>
+<li>左图是push weight后的结果，可以看出状态3和状态4到状态5的转移路径完全相同，所以可以把它们融合为一个状态（权重推移前是不等价的，故可以看出权重推移的必要性），右图是minimization后的结果</li>
+</ol></li>
+</ol></li>
+</ol></li>
+</ol></li>
+<li><p>构建解码图</p>
+
+<ol>
+<li><strong>utils/mkgraph.sh  --mono data/lang_test_tg exp/mono0a exp/mono0a/graph_tgpr</strong>
+
+<ol>
+<li>构建解码图，解码图依赖于WFST（有限加权状态机）和数据的一系列处理</li>
+<li>一个标准的WFST由四个模块构成：HCLG
+
+<ol>
+<li>H： HMM结构</li>
+<li>C：音素的上下文依赖（context）</li>
+<li>L：词典（lexicon）</li>
+<li>G：grammar 也就是语言模型 LM，此处为之前训练脚本中prepare_lm.sh生成的 G.fst</li>
+</ol></li>
+<li>依次整合这四个，步骤如下
+
+<ol>
+<li><strong>fsttablecompose \(lang/L\_disambig.fst \)lang/G.fst | fstdeterminizestar --use-log=true | fstminimizeencoded | fstpushspecial |  fstarcsort --sort_type=ilabel &gt; $lang/tmp/LG.fst || exit 1;</strong><br/>
+<strong>fstisstochastic $lang/tmp/LG.fst || echo&quot;[info]: LG not stochastic.&quot;</strong><br/>
+先整合L和G，把每个词扩展成音素，然后determinize和minimize，我理解这里是类似决策树的建树、聚类间共享。</li>
+<li>fstcomposecontext --context-size=$N --central-position=$P   --read-disambig-syms=$lang/phones/disambig.int   --write-disambig-syms=$lang/tmp/disambig_ilabels_${N}_${P}.int   $lang/tmp/ilabels_${N}_${P} &lt; $lang/tmp/LG.fst |  fstarcsort --sort_type=ilabel &gt; $clg<br/>
+fstisstochastic $clg || echo &quot;[info]: CLG not stochastic.&quot;<br/>
+这里加入C，把LG整合成CLG</li>
+<li>make-h-transducer  --disambig-syms-out=$dir/disambig_tid.int   --transition-scale=$tscale $lang/tmp/ilabes_${N}_${P} $tree $model   &gt; $dir/Ha.fst || exit 1;<br/>
+构成H传感器，Ha.fst 就是H.fst，这是不包含 self-loops<br/>
+如果是triphone，包含在如ilables_3_1这样的文件里</li>
+<li>fsttablecompose $dir/Ha.fst &quot;$clg&quot; | fstdeterminizestar --use-log=true  | fstrmsymbols $dir/disambig_tid.int | fstrmepslocal |   fstminimizeencoded &gt; $dir/HCLGa.fst || exit 1;
+fstisstochastic $dir/HCLGa.fst || echo &quot;HCLGa is not stochastic&quot;<br/>
+把Ha.fst合并到CLG.fst，删除symbols</li>
+<li>add-self-loops  --self-loop-scale=$loopscale --reorder=true   $model &lt; $dir/HCLGa.fst &gt; $dir/HCLG.fst || exit 1;</li>
+</ol></li>
+</ol></li>
+</ol></li>
+<li><p>解码  steps/decode.sh</p>
+
+<ol>
+<li>脚本里包含了对现有feature格式的判断，feature有两种，通过判断输入是否存在final.mat ，来指定feature type是 deltas还是lda，如果是lda类型，需要将feature进行拼接和转换
+
+<ol>
+<li>delta+delta-delta
+-<img src="http://10.0.1.215/markdown/kaldi_window.png" alt=""/>
+MFCC过程中，一个窗口抽出13维倒谱系数，最后delta+delta-delta计算了当前特征和前一个特征，因此总的维度(矩阵列数，在HMM的topo中体现）是13+13+13=39</li>
+<li>LDA+MLLT(Maximum Likelihood Linear Transform)  通过脚本 train_sat.sh(Speaker Adapted Training) 体现，多用于speaker的自适应训练<br/>
+LDA 主要用来降维度， MLLT用作基础的线性转换
+-<img src="http://10.0.1.215/markdown/kaldi_feature.png" alt=""/></li>
+</ol></li>
+<li>$cmd --num-threads $num_threads JOB=1:$nj $dir/log/decode.JOB.log gmm-latgen-faster $thread_string --max-active=$max_active --beam=$beam --lattice- beam=$lattice_beam --acoustic-scale=$acwt --allow-partial=true --word-symbol-table=$graphdir/words.txt $model $graphdir/HCLG.fst &quot;$feats&quot; &quot;ark:|gzip -c &gt; $dir/lat.JOB.gz&quot; || exit 1;<br/>
+
+<ol>
+<li><strong>gmm-latgen-faster</strong> 用来对测试集或者说是预测集做评估。他给每个utterance生成一个word层级的lattice，选出最好的，通过WER(WordErrorRate)评估
+
+<ol>
+<li>--max-active Decoder的最大活跃状态数</li>
+<li><strong>--acoustic-scale</strong>  acoustic likelihoods的缩放因子，这个还不知道怎么用</li>
+<li>--allow-partial=true  允许在没到达结束状态时的结果，或许可以理解成局部最优？</li>
+<li>输入 words.txt  HCLG.fst feature  输出 lat.JOB.gz</li>
+</ol></li>
+<li><strong>beam</strong> 用在计算Viterbi过程中的剪枝操作，避免诸如维灾难的情况，影响所有utterance的decoding速度</li>
+<li><strong>max-active-states</strong> 是在遇到有样本噪声的情况，最坏情况下的阈值，同样可以降低冗余计算量</li>
+<li><strong>lattice-beam</strong> 影响的是生成lattice的解析速度</li>
+<li><strong>steps/diagnostic/analyze_lats.sh</strong>
+
+<ol>
+<li><strong>lattice-depth-per-frame</strong>
+
+<ol>
+<li>对于每个lattice，计算每个frame的深度(depth_tmp.JOB.gz)，也就是arcs，保存在一个vector里</li>
+</ol></li>
+<li><strong>lattice-best-path</strong>
+
+<ol>
+<li>生成lattice的1-best路径，并生成一个临时的对齐ali_tmp.JOB.gz
+
+<ol>
+<li>注意，如果要输出FSTs 用 lattice-1best，如果要输出LM的得分，用 <strong>lattice-1best | nbest-to-linear</strong></li>
+</ol></li>
+</ol></li>
+<li><strong>ali-to-phones</strong>
+
+<ol>
+<li>把model-level的对齐 ali_tmp.JOB.gz 转化成音素的序列（phone-sequences) </li>
+</ol></li>
+<li>把depth_tmp.JOB.gz 和音素序列合并，生成depth_stats_tmp.JOB.gz</li>
+<li><strong>tonsteps/diagnostic/analyze_lattice_depth_stats.py分析 depth_stats_tmp.JOB.gz</strong></li>
+</ol></li>
+<li>local/score.sh</li>
+</ol></li>
+</ol></li>
+<li><p>align_si.sh</p>
+
+<ol>
+<li>判断feature的类型（通过final.mat），并对特征进行转换</li>
+<li><strong>compile-train-graphs</strong> 重新生成训练图</li>
+<li><strong>gmm-align-compiled</strong> 对齐，这里输入是模型，而align-equal-compiled的输入是fst，在模型之前。同时跟进变化的feature</li>
+</ol></li>
+<li><p><strong>steps/train_lda_mllt.sh</strong></p>
+
+<ol>
+<li><strong>ali-to-post</strong>  将对齐转化为后验，但是生成的Posterior 对象很细小, 每帧都有一个单元后验的 transition-id</li>
+<li><strong>weight-silence-post</strong>  修改后验,通常用于减小静音的权重</li>
+<li><strong>acc-lda</strong> Accumulate LDA statistics based on pdf-ids.   <strong>只计算一次</strong></li>
+<li>**est-lda ** Estimate LDA transform using stats obtained with acc-lda. 生成一个0.mat</li>
+<li><strong>gmm-init-model-flat</strong> Initialize GMM, with Gaussians initialized to mean and variance of some provided example data （在三音素未build-tree的时候调用）</li>
+<li><strong>gmm-acc-mllt</strong> Accumulate MLLT (global STC) statistics   <strong>每次迭代都计算</strong></li>
+<li><strong>est-mllt</strong> Do update for MLLT (also known as STC)</li>
+<li><strong>gmm-transform-means</strong> Transform GMM means with linear or affine transform</li>
+<li><strong>compose-transforms</strong> Compose (affine or linear) feature transforms。每个迭代更新*.mat，体现在feats中
+
+<ol>
+<li>feats=&quot;\(splicedfeats transform-feats \)dir/0.mat ark:- ark:- |&quot;</li>
+</ol></li>
+</ol></li>
+<li><p><strong>steps/train_sat.sh</strong> This does Speaker Adapted Training (SAT) It can be done on top of either LDA+MLLT, or delta and delta-delta features.</p>
+
+<ol>
+<li>通常语音识别系统的应用环境与训练语料具有不同程度的不匹配性，因此，往往需要进行一定的声学模型自适应，以得到比较好的识别效果。</li>
+<li>通常就是fmmlr技术，LDA+MLLT</li>
+<li>gmm-est-fmllr
+
+<ol>
+<li>fmllr 特征空间的极大似然线性回归</li>
+<li>Estimate global fMLLR transforms, either per utterance or for the supplied set of speakers (spk2utt option)</li>
+</ol></li>
+<li>gmm-acc-stats-twofeats
+
+<ol>
+<li>Accumulate stats for GMM training, computing posteriors with one set of features but accumulating statistics with another.First features are used to get posteriors, second to accumulate stats</li>
+<li>第一个特征是计算后验的，也就是经过mllr转换的<br/>
+第二个计算acc，通过speaker-independent feature，也就是未经mllr转换的feature</li>
+</ol></li>
+</ol></li>
+<li><p><strong>steps/</strong><strong>align_fmllr.sh</strong></p>
+
+<ol>
+<li>gmm-post-to-gpost:  Convert state-level posteriors to Gaussian-level posteriors</li>
+<li>gmm-est-fmllr-gpost: Estimate global fMLLR transforms, either per utterance or for the supplied set of speakers (spk2utt option). Reads Gaussian-level posteriors.  Writes to a table of matrices.</li>
+</ol></li>
+<li><p>steps/train_ubm.sh</p>
+
+<ol>
+<li>ubm（广义背景模型）是在SGMM建模中训练满协方差的模型，这个模型作为初始化模型，再去训练SGMM</li>
+<li>sgmm 子空间高斯混合模型，每个状态依然对应一个混合高斯函数，只是该函数的均值、方差、权重通过一个向量，分别和均值方差权重的映射矩阵计算得到，该向量与当前状态有关，感觉像投影降维，把特征打平，模型参数变得更紧凑。而参数的映射矩阵则为所有状态共享，这些参数能通过所有的训练数据进行更新，这使得在有限的训练数据下，模型参数能够得到更充分的训练。</li>
+<li><strong>init-ubm</strong>
+
+<ol>
+<li>Cluster the Gaussians in a diagonal-GMM acoustic model to a single full-covariance or diagonal-covariance GMM.</li>
+<li>把之前的alidir/final.mdl 转换成 0.ubm</li>
+</ol></li>
+<li><strong>gmm-gselect</strong>
+
+<ol>
+<li>Precompute Gaussian indices for pruning (e.g. in training UBMs, SGMMs, tied-mixture systems) For each frame, gives a list of the n best Gaussian indices,
+ sorted from best to worst.</li>
+</ol></li>
+<li><strong>fgmm-global-to-gmm</strong>
+
+<ol>
+<li>Convert single full-covariance GMM to single diagonal-covariance GMM.</li>
+</ol></li>
+<li><strong>fgmm-global-est</strong>
+
+<ol>
+<li> Estimate a full-covariance GMM from the accumulated stats.</li>
+</ol></li>
+<li>迭代生成final.ubm</li>
+</ol></li>
+<li><p><strong>steps/train_sgmm2.sh</strong></p></li>
+<li><p><strong>steps/align_sgmm2.sh</strong></p></li>
+<li><p><strong>steps/make_denlats_sgmm2.sh</strong></p></li>
+<li><p><strong>steps/train_mmi_sgmm2.sh</strong></p>
+
+<ol>
+<li>加入最大互信息，解决模型辨别能力不强的问题。原因是，通过Baum-Welch算法计算似然概率，只会计算标记为该模型的训练数据，不排除计算其他模型的训练数据的时候，似然概率也很大，也就是范化能力弱。</li>
+</ol></li>
+<li><p><strong>steps/nnet/make_fmllr_feats.sh</strong></p>
+
+<ol>
+<li>第一步在mfcc特征基础上做fmllr变换，然后我们用的是这个特征。</li>
+<li>feature 中，通过feature_type 进行 transform设定</li>
+<li>然后copy-feats进行转换，然后merge</li>
+</ol></li>
+<li><p>**utils/subset_data_dir_tr_cv.sh ** \(dir \){dir}_tr90 ${dir}_cv10</p>
+
+<ol>
+<li>90%用来训练，10%用来做交叉。</li>
+</ol></li>
+<li><p>steps/nnet/pretrain_dbn.sh</p>
+
+<ol>
+<li>DBN预训练是通过CD-1（对比散度）来做的。用神经网络的形式对特征变换，dbn的输入时0均值和单元方差，使用分块和shift+scale来做的。</li>
+<li>注意：第一层是Gaussian-Bernoulli RBM，后面的几层是Bernoulli-Bernoulli RBMs。</li>
+<li>对特征的处理，然后求cmvn和add deltas，然后送到特征变换里</li>
+<li>创建一个&#39;feature_transform&#39; 在NN之前：
+
+<ol>
+<li>初始化feature_transform_proto</li>
+<li>nnet-initialize，通过proto初始化成nnet.init</li>
+<li><strong>nnet-forward 向后传播</strong></li>
+<li><strong>compute-cmvn-stats 计算向后传播的cmvn-g.stats</strong></li>
+<li><strong>cmvn-to-nnet 把cmvn等参数重新转换为nnet里的参数</strong></li>
+<li><strong>nnet-concat</strong>把nnet.init和上一步结果连接起来</li>
+</ol></li>
+<li>以网络深度迭代x：
+
+<ol>
+<li>第一个迭代特殊处理，因为输入节点是高斯分布
+
+<ol>
+<li><strong>nnet-initialize</strong></li>
+<li><strong>rbm-train-cd1-frmshuff  通过CD和一阶CMCM 训练rbm（可以设置迭代次数、数据子集）</strong>
+
+<ol>
+<li>区别： —feature-transform 是之前计算的feature_transform</li>
+</ol></li>
+<li><strong>rbm-convert-to-nnet  生成dbn</strong></li>
+</ol></li>
+<li>其余迭代是伯努利分布，可以迭代计算
+
+<ol>
+<li>计算cmvn
+
+<ol>
+<li><strong>nnet-forward  输入是上个迭代的dbn和feature_transform连起来</strong></li>
+<li><strong>compute-cmvn-stats</strong></li>
+<li><strong>cmvn-to-nnet → x.cmvn</strong></li>
+</ol></li>
+<li>基于计算的x.cmvn生成proto</li>
+<li><strong>nnet-initialize proto → rbm.init</strong></li>
+<li><strong>rbm-train-cd1-frmshuff rbm.init  → x.rbm</strong>
+
+<ol>
+<li>区别：—feature_transform是之前的feature_transform和上个迭代的x-1.dbn联合起来</li>
+</ol></li>
+<li>**nnet-concat **
+
+<ol>
+<li>****rbm-convert-to-nnet  <strong>x.rbm 合并 上个迭代的dbn → x.dbn</strong></li>
+</ol></li>
+</ol></li>
+</ol></li>
+</ol></li>
+<li><p><strong>steps/nnet/train.sh   帧交叉熵训练</strong></p>
+
+<ol>
+<li>和上面类似，只是训练的时候用<strong>steps/nnet/train_scheduler.sh</strong>
+
+<ol>
+<li>**nnet-train-frmshuff   **Usage:  ***<strong><em>$0</em></strong>* <mlp-init> <feats-tr> <feats-cv> <labels-tr> <labels-cv> <exp-dir>**</li>
+<li>label 和 feats用 **ali-to-pdf  <strong>ali-to-post 等生成</strong>**</li>
+</ol></li>
+</ol></li>
+<li><p>steps/nnet/decode.sh </p>
+
+<ol>
+<li><strong>nnet-initialize copy_and_softmax.nnet</strong></li>
+<li>_<strong>nnet</strong>_<strong>-concat  softmax.net (<a href="http://softmax.net/">http://softmax.net/</a>) 和final.net合并</strong></li>
+<li>_<strong>nnet</strong>_**-forward | <strong>latgen-faster-mapped → lat.JOB.gz (reuse HCLG.fst)</strong>**</li>
+</ol></li>
+<li><p>steps/nnet/train_mpe.sh  make_denlats.sh</p>
+
+<ol>
+<li>对所有utterance联合优化来训练网络</li>
+<li>使用每句迭代的随机梯度下降法</li>
+<li>sMBR的目标是最大化从参考的对齐中得到的状态标签的期望正确率</li>
+<li><strong>nnet-train-mpe-sequential</strong></li>
+</ol></li>
+<li><p>steps/nnet/decode 和之前一样</p></li>
+<li><p>评分 <strong>local</strong><strong>/score.sh</strong></p>
+
+<ol>
+<li>lattice-scale --inv-acoustic-scale=LMWT &quot;ark:gunzip -c $dir/lat.*.gz|
+
+<ol>
+<li>从decode.sh 中的<strong>gmm-latgen-faster</strong>生成的lattice读取，通过一个2x2的矩阵， 对lattice的权重概率进行缩放</li>
+</ol></li>
+<li>lattice-add-penalty --word-ins-penalty=$word_ins_penalty ark:- ark:-
+
+<ol>
+<li>给lattice增加word的插入惩罚系数，该系数是log以e为底的负数，也就是ln，添加到language model的cost中</li>
+</ol></li>
+<li>lattice-best-path --word-symbol-table=$symtab
+
+<ol>
+<li>通过lattices选出1-best路径，输出就是utterance-id 和识别结果，此时的结果为word对应的int</li>
+<li>word-symbol-table就是之前的word.txt</li>
+</ol></li>
+<li>utils/int2sym.pl -f 2- $symtab | sed &#39;s:&lt;UNK&gt;::g&#39; |
+
+<ol>
+<li>把word转换为字面</li>
+</ol></li>
+<li>compute-wer  --text --mode=present
+
+<ol>
+<li>计算WER</li>
+</ol></li>
+</ol></li>
+<li><p>对align操作的理解</p>
+
+<ol>
+<li>在Kaldi提供的例子中，大部分语料库都不标注语素的时间信息，因此必须通过一些基本原则进行时间对准，因此用到了上面提到的Viterbi算法搜索出最优路径， 并强制对齐，包括了词需要转换成哪些因素，以及每个因素所对应的帧</li>
+</ol></li>
+<li><p>对齐生成结果文件”ali”的理解</p>
+
+<ol>
+<li>show-alignments data/lang/phones.txt exp/mono0a/40.mdl &quot;ark:gunzip -c exp/mono0a/ali.1.gz|&quot; | head -1，这个是yesno的例子，结果如下：
+-<img src="http://10.0.1.215/markdown/kaldi_ali.png" alt=""/></li>
+<li>这里第一列代表的是utterance-id， 后面每一个【】都代表一个音素，里面的数字代表的是状态转移id(transition-id)，状态id是依据phones.txt中的音素依次向后递增的，如下，圆圈内就是状态，箭头代表转台转移，也就是【】中的数字，状态个数在HMM的topo中指定。
+-<img src="http://10.0.1.215/markdown/kaldi_state.png" alt=""/></li>
+</ol></li>
+<li><p>对生成fst文件的理解</p>
+
+<ol>
+<li>compile-train-graphs exp/mono0a/tree exp/mono0a/0.mdl data/lang/L.fst &#39;ark:sym2int.pl --map-oov 1 -f 2- data/lang/words.txt &lt; data/train_yesno/split1/1/text|&#39; &#39;ark:|gzip -c &gt; exp/mono0a/fsts.1.gz&#39;
+
+<ol>
+<li>这个是为每一个句子生成一个fst，来更好的align</li>
+</ol></li>
+<li>sym2int.pl --map-oov 1 -f 2- data/lang/words.txt &lt; data/train_yesno/split1/1/text
+
+<ol>
+<li>这句就是把text里的音素对应成数字，把oov词映射成1.
+-<img src="http://10.0.1.215/markdown/kaldi_sym2int.png" alt=""/></li>
+</ol></li>
+<li>L.fst : fstprint --isymbols=data/lang/phones.txt --osymbols=data/lang/words.txt data/lang/L.fst
+
+<ol>
+<li>本质上就是fst格式的lexicon，输入时phones，输出是word
+-<img src="http://10.0.1.215/markdown/kaldi_L.fst.png" alt=""/><br/>
+左后一列应该是概率之类的</li>
+</ol></li>
+<li>fsts.1.gz : fstcopy &#39;ark:gunzip -c exp/mono0a/fsts.1.gz|&#39; ark,t:- | head
+-<img src="http://10.0.1.215/markdown/kaldi_fsts.gz.png" alt=""/> 
+
+<ol>
+<li>前三列是转移id，其中，前两列是按照句子的第一个音素开始计数的，而第三列是根据phones.txt对应的顺序来计数的。第四列是word.txt里所对应的int。0表示没有词对应，kaldi里用<eps>来表示。第五列是cost，这里都是相同的。</li>
+<li>compile-train-graph是不考虑转移概率的，因为在一开始训练的时候，计算转移概率是多余的，我们把音素对应的帧对应出来之后再计算会方便很多。</li>
+</ol></li>
+</ol></li>
+<li><p>lattice</p>
+
+<ol>
+<li>A lattice is a representation of the alternative word-sequences that are &quot;sufficiently likely&quot; for a particular utterance. </li>
+</ol></li>
+</ol>
+
+<h2 id="toc_1">二、主要训练流程</h2>
+
+<ol>
+<li><p>train-mono.sh</p>
+
+<ol>
+<li>gmm-init-mono: top → 0.mdl  tree</li>
+<li>compile-train-graphs:  tree 0.mdl L.fst → fst.JOB.gz</li>
+<li>align-equal-compiled: fsts.JOB.gz feature  |  gmm-acc-stats-ali: 0.mdl feature → 0.JOB.acc</li>
+<li>gmm-est: 0.*.acc → 1.mdl</li>
+<li>1.mdl → final.mdl</li>
+</ol></li>
+<li><p>mkgraph.sh</p>
+
+<ol>
+<li>L_disambig.fst G.fst tree final.mdl → HCLG.fst</li>
+</ol></li>
+<li><p>steps/decode.sh<br/>
+    1. gmm-latgen-faster: final.mdl HCLG.fst feature → lat.JOB.gz<br/>
+    2. local/score.sh</p></li>
+<li><p>steps/align_si.sh</p>
+
+<ol>
+<li>compile-train-graphs</li>
+<li>gmm-align-compiled:  final.mdl fst.JOB.gz feature → ali.JOB.gz</li>
+</ol></li>
+<li><p>steps/train_deltas.sh</p>
+
+<ol>
+<li>acc-tree-stats: final.mdl feature ali.JOB.gz → JOB.treeacc</li>
+<li>sum-tree-stats:  *.treeacc → treeacc</li>
+<li>cluster-phones:  treeacc phones/set.int → questions.int</li>
+<li>compile-questions: topo questions.int → questions.qst</li>
+<li>build-tree:  treeacc phones/roots.txt questions.qst topo → tree</li>
+<li>gmm-init-model:  tree treeacc topo  → 1.mdl 1.occs</li>
+<li>gmm-mixup:  1.mdl 1.occs → 1.mdl </li>
+<li>convert-ali:  final.mdl 1.mdl tree ali.JOB.gz  → ali.JOB.gz</li>
+<li>compile-train-graphs:  tree 1.mdl L.fst → fst.JOB.gz</li>
+<li>迭代x：
+
+<ol>
+<li>gmm-align-compiled:  x.mdl fst.JOB.gz  → ali.JOB.gz (指定的某些迭代中对齐）</li>
+<li>gmm-acc-stats-ali:  x.mdl feature ali.JOB.gz  → x.JOB.acc</li>
+<li>gmm-est:  x.JOB.acc x.mdl → (x+1).mdl (x+1).occs</li>
+</ol></li>
+<li>x.mdl → final.mdl</li>
+<li>x.occs → final.occs</li>
+</ol></li>
+<li><p>mkgraph.sh &amp;&amp; steps/decode.sh</p></li>
+<li><p>steps/align_si.sh</p></li>
+<li><p>steps/train_lda_mllt.sh</p>
+
+<ol>
+<li> ali-to-post:  ali.JOB.gz | weight-silence-post:  final.mdl | acc-lda:  final.mdl feature_without_transform → lda.JOB.acc</li>
+<li>est-lda: lda.*.acc → 0.mat full.mat</li>
+<li>acc-tree-stats:  final.mdl feature ali.JOB.gz → JOB.treeacc</li>
+<li>sum-tree-stats:  *.treeacc → treeacc</li>
+<li>cluster-phones:  treeacc phones/set.int → questions.int</li>
+<li>compile-questions: topo questions.int → questions.qst</li>
+<li>build-tree:  treeacc phones/roots.txt questions.qst topo → tree</li>
+<li>gmm-init-model:  tree treeacc topo  → 1.mdl 1.occs</li>
+<li>convert-ali:  final.mdl 1.mdl tree ali.JOB.gz  → ali.JOB.gz（到这里跟之前的train_deltas差不多，只是没有mixup了）</li>
+<li>compile-train-graphs:  tree 1.mdl L.fst → fst.JOB.gz</li>
+<li>迭代x:
+
+<ol>
+<li>gmm-align-compiled:  x.mdl fst.JOB.gz  feature_with_transform（feature中包含了对0.mat的转换） → ali.JOB.gz (指定的某些迭代中对齐）</li>
+<li>ali-to-post:  ali.JOB.gz | weight-silence-post:  x.mdl | gmm-acc-mllt:  x.mdl feature_with_transform → x.JOB.macc</li>
+<li>est-mllt:  x.*.macc → x.mat.new</li>
+<li>gmm-transform-means:  x.mat.new x.mdl → x.mdl</li>
+<li>compose-transforms:  x.mat.new last.mat → x.mat</li>
+<li>在feature中 把last.mat 更新为x.mat</li>
+<li>gmm-acc-stats-ali:  x.mdl feature_with_transform ali.JOB.gz  → x.JOB.acc</li>
+<li>gmm-est:  x.JOB.acc x.mdl → (x+1).mdl (x+1).occs</li>
+<li>x.mdl → final.mdl</li>
+<li>x.occs → final.occs</li>
+<li>x.mat → final.mat</li>
+</ol></li>
+</ol></li>
+<li><p>steps/align_si.sh</p></li>
+<li><p>steps/train_sat.sh</p>
+
+<ol>
+<li>ali-to-post:  ali.JOB.gz | weight-silence-post:  final.mdl | gmm-est-fmllr:  final.mdl feature_without_transform → trans.JOB</li>
+<li>acc-tree-stats:  final.mdl feature ali.JOB.gz → JOB.treeacc</li>
+<li>sum-tree-stats:  *.treeacc → treeacc</li>
+<li>cluster-phones:  treeacc phones/set.int → questions.int</li>
+<li>compile-questions: topo questions.int → questions.qst</li>
+<li>build-tree:  treeacc phones/roots.txt questions.qst topo → tree</li>
+<li>gmm-init-model:  tree treeacc topo  → 1.mdl 1.occs</li>
+<li>convert-ali:  final.mdl 1.mdl tree ali.JOB.gz  → ali.JOB.gz</li>
+<li>compile-train-graphs:  tree 1.mdl L.fst → fst.JOB.gz</li>
+<li>迭代x:
+
+<ol>
+<li>gmm-align-compiled:  x.mdl fst.JOB.gz  feature_with_transform（feature中包含了对trans.JOB的转换） → ali.JOB.gz (指定的某些迭代中对齐）</li>
+<li>ali-to-post:  ali.JOB.gz | weight-silence-post:  x.mdl | gmm-est-fmllr: x.mdl feature_with_transform → tmp_trans.JOB</li>
+<li> compose-transforms： tmp_trans.JOB trans.JOB → trans.JOB</li>
+<li>更新feature中的 trans.JOB</li>
+<li>gmm-acc-stats-ali:  x.mdl feature_with_transform ali.JOB.gz → x.JOB.acc</li>
+<li>gmm-est:  x.JOB.acc  x.mdl → (x+1).mdl (x+1).occs</li>
+</ol></li>
+<li>ali-to-post:  ali.JOB.gz |  gmm-acc-stats-two-feats:  x.mdl feature_with_transform feature_without_transform → x.JOB.acc</li>
+<li>gmm-est: x.mdl  x.JOB.acc  → x.alimdl</li>
+<li>x.mdl → final.mdl </li>
+<li>x.occs → final.occs</li>
+<li>x.alimdl → final.alimdl</li>
+</ol></li>
+<li><p>steps/decode_fmllr.sh</p>
+
+<ol>
+<li>mkgraph.sh &amp;&amp; steps/decode.sh</li>
+<li>gunzip:  lat.JOB.gz | lattice-to-post |  weight-silence-post:  final.alimdl | gmm-post-to-gpost:  final.alimdl feature | gmm-est-fmllr-gpost:  final.mdl feature → pre_trans.JOB</li>
+<li>更新feature 加入 transform和 pre_trans.JOB</li>
+<li>gmm-latgen-faster:  final.mdl HCLG.fst feature → lat.tmp.JOB.gz</li>
+<li>lattice-determinize-pruned:  lat.tmp.JOB.gz | lattice-to-post:  final.mdl | gmm-est-fmllr final.mdl feature → trans_tmp.JOB</li>
+<li>compose-transforms:  trans_tmp.JOB pre_trans.JOB → trans.JOB</li>
+<li>更新feature 加入transform 和 trans.JOB</li>
+<li>gmm-rescore-lattice:  final.mdl lat.tmp.JOB.gz feature | lattice-determinize-pruned  → lat.JOB.gz</li>
+<li>local/score.sh</li>
+</ol></li>
+<li><p>steps/align_fmllr.sh</p>
+
+<ol>
+<li>compile-train-graphs:  tree final.mdl L.fst → fsts.JOB.gz</li>
+<li>gmm-align-compiled:  final.alimdl  fsts.JOB.gz  feature  → pre_ali.JOB.gz</li>
+<li>ali-to-post:  pre_ali.JOB.gz | weight-silence-post:  final.alimdl   |  gmm-post-to-gpost:  final.alimdl feature | gmm-est-fmllr-gpost:  final.mdl feature → trans.JOB</li>
+<li>更新feature 加入transform 和 trans.JOB</li>
+<li>gmm-align-compiled:   final.mdl  fsts.JOB.gz feature_with_transform  → ali.JOB.gz</li>
+</ol></li>
+<li><p>steps/decode_fmllr.sh</p>
+
+<ol>
+<li>lattice-determinize-pruned
+
+<ol>
+<li>Determinize lattices, keeping only the best path (sequence of acoustic states)
+for each input-symbol sequence.  This version does pruning as part of the
+determinization algorithm, which is more efficient and prevents blowup.</li>
+</ol></li>
+<li> lattice-to-post
+
+<ol>
+<li> Do forward-backward and collect posteriors over lattices.</li>
+<li>在预设模型M和观察序列O都确定的情况下，计算P(O|M)这个条件概率</li>
+</ol></li>
+<li>gmm-rescore-lattice
+
+<ol>
+<li>Replace the acoustic scores on a lattice using a new model.</li>
+</ol></li>
+</ol></li>
+<li><p>steps/make_fbank.sh</p>
+
+<ol>
+<li>extract-segments
+
+<ol>
+<li>Extract segments from a large audio file in WAV format.</li>
+</ol></li>
+<li>compute-fbank-feats
+
+<ol>
+<li>Create Mel-filter bank (FBANK) feature files.</li>
+</ol></li>
+<li>copy-feats
+
+<ol>
+<li>Copy features [and possibly change format]</li>
+</ol></li>
+</ol></li>
+<li><p>steps/compute_cmvn_stats.sh</p>
+
+<ol>
+<li>compute-cmvn-stats-two-channel    two-channel的情况，比如打电话场景</li>
+<li>compute-cmvn-stats
+
+<ol>
+<li>Compute cepstral mean and variance normalization statistics</li>
+</ol></li>
+<li>modify-cmvn-stats     存在fake-dim的情况
+
+<ol>
+<li>Copy cepstral mean/variance stats so that some dimensions have &#39;fake&#39; stats that will skip normalization</li>
+</ol></li>
+</ol></li>
+<li><p>steps/nnet/train.sh</p>
+
+<ol>
+<li>nnet-initialize
+
+<ol>
+<li>Initialize Neural Network parameters according to a prototype </li>
+</ol></li>
+<li>nnet-forward
+
+<ol>
+<li>Perform forward pass through Neural Network.</li>
+<li>Usage: nnet-forward [options] <nnet1-in> <feature-rspecifier> <feature-wspecifier></li>
+</ol></li>
+<li>nnet-concat
+
+<ol>
+<li>Concatenate Neural Networks (and possibly change binary/text format)</li>
+<li>Usage: nnet-concat [options] <nnet-in1> &lt;...&gt; <nnet-inN> <nnet-out></li>
+</ol></li>
+<li>cmvn-to-nnet
+
+<ol>
+<li>Convert cmvn-stats into <AddShift> and <Rescale> components.</li>
+<li>Usage:  cmvn-to-nnet [options] <transf-in> <nnet-out></li>
+</ol></li>
+<li>utils/nnet/make_nnet_proto.py
+
+<ol>
+<li>Generated Nnet prototype, to be initialized by &#39;nnet-initialize&#39;.</li>
+</ol></li>
+<li>steps/nnet/train_scheduler.sh
+
+<ol>
+<li>Schedules epochs and controls learning rate during the neural network training</li>
+</ol></li>
+</ol></li>
+<li><p>steps/nnet/decode.sh</p></li>
+<li><p>steps/nnet/align.sh</p></li>
+<li><p>steps/nnet/make_denlats.sh</p></li>
+<li><p>steps/nnet/train_mpe.sh</p></li>
+<li><p>steps/train_quick.sh</p>
+
+<ol>
+<li>和steps/train_sat.sh 内容类似，有一些差别：
+
+<ol>
+<li>利用之前的trans.JOB 不需要重新计算，而是直接建树</li>
+<li>gmm-init-model 不是完全从头初始化，而是利用之前的final.mdl进行初始化</li>
+<li>因为采用的是依靠其他模型初始化，之后增加了gmm-mixup步骤，来保证mix-down 和 mix-up的高斯数量和我们想要的是一致的</li>
+<li>不需要fmllr转换</li>
+<li>存在trans.1 的情况下，更新final.alimdl</li>
+</ol></li>
+</ol></li>
+<li><p>steps/decode_fmllr.sh</p></li>
+<li><p>steps/align_fmllr.sh (train)</p></li>
+<li><p>steps/align_fmllr.sh (dev) cv</p></li>
+<li><p>local/nnet/run_dnn.sh</p>
+
+<ol>
+<li>steps/make_fbank.sh
+
+<ol>
+<li>compute-fbank-feats:  wav.JOB.scp |  copy-feats → raw_fbank.JOB.ark,raw_fbank.JOB.scp</li>
+<li>raw_fbank.JOB.ark → feats.scp</li>
+</ol></li>
+<li>steps/compute_cmvn_stats.sh
+
+<ol>
+<li>compute-cmvn-stats:  feats.scp → cmvn.ark, cmvn.scp</li>
+</ol></li>
+<li>steps/nnet/train.sh
+
+<ol>
+<li>ali-to-pdf:  alidir/final.mdl alidir/ali.*.gz  → PDF</li>
+<li>analyze-counts:  PDF → ali_train_pdf.counts</li>
+<li>copy-transition-model:  alidir/final.mdl → final.mdl </li>
+<li>cp:  alidir/tree → tree</li>
+<li>generate proto</li>
+<li>nnet-initialize:  proto feature_transform         #NN之前的特征转换</li>
+<li>feature_transform → feature_transform_old </li>
+<li>nnet-forward:  feature_transform_old feature_10k |  compute-cmvn-stats  → cmvn-g.stats</li>
+<li>nnet-concat:  feature_transform_old “cmvn-to-nnet cmvn-g.stats”  feature_transform</li>
+<li>utils/nnet/make_nnet_proto.py → nnet.proto    #根据模型topo参数生成</li>
+<li>nnet-initialize:  nnet.proto → nnet.init    #初始化NN</li>
+<li>（可选）nnet-concat:  dbn nnet.init → nnet_dbn.init</li>
+<li>steps/nnet/train_scheduler.sh 
+
+<ol>
+<li><mlp-init> <feats-tr> <feats-cv> <labels-tr> <labels-cv> <exp-dir>  → final.nnet</li>
+</ol></li>
+</ol></li>
+<li>steps/nnet/decode.sh
+
+<ol>
+<li>nnet-initialize:  proto(softmax) → copy_and_softmax.nnet</li>
+<li>nnet-forward:  fina.nnet feature | latgen-faster-mapped:  HCLG.fst → lat.JOB.gz</li>
+<li>local/score.sh</li>
+</ol></li>
+<li>steps/nnet/align.sh
+
+<ol>
+<li>compile-train-graphs:  tree final.mdl L.fst  | align-compiled-mapped:  final.mdl feature_with_nnet_forward → ali.JOB.gz</li>
+</ol></li>
+<li>steps/nnet/make_denlats.sh
+
+<ol>
+<li>Create denominator lattices for MMI/MPE/sMBR training.</li>
+<li>text | utils/sym2int.pl:  words.txt | utils/make_unigram_grammar.pl | fstcompile | fstarcsort → new/G.fst</li>
+<li>utils/mkgraph.sh → dengraph</li>
+<li>latgen-faster-mapped:   final.mdl dengraph/HCLG.fst feature_with_nnet_forward  → lat.store_separately_as_gz.scp *.gz</li>
+<li>*.gz → lat.scp</li>
+</ol></li>
+<li>steps/nnet/train_mpe.sh
+
+<ol>
+<li>Sequence-discriminative MPE/sMBR training of DNN. 4 iterations (by default) of Stochastic Gradient Descent with per-utterance updates.</li>
+<li>迭代x:
+
+<ol>
+<li>nnet-_train_-mpe-sequential:  (x-1).nnet[src/final.mdl] alidir/final.mdl feature_train.scp  alidir/ali.*.gz lat.scp → x.nnet</li>
+</ol></li>
+<li>x.nnet → final.nnet</li>
+</ol></li>
+<li>steps/nnet/decode.sh</li>
+</ol></li>
+</ol>
+
 			</div>
 
 		
@@ -107,6 +1019,9 @@ $(document).ready(function(event) {
 
 	    <p class="meta">
 	    
+	        <a class="basic-alignment left" href="14700356814047.html" 
+	        title="Previous Post: 基于HTK的孤立词有监督识别">&laquo; 基于HTK的孤立词有监督识别</a>
+	    
 	    
 	    </p>
 	  </footer>
@@ -119,7 +1034,14 @@ $(document).ready(function(event) {
 	  <ul id="recent_posts">
 	  
 	      <li class="post">
-	        <a href="%E7%AC%94%E8%AE%B0.html"><strong>笔记&nbsp;(1)</strong></a>
+	        <a href="%E7%AC%94%E8%AE%B0.html"><strong>笔记&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	  
+	      <li class="post">
+	        <a href="%E6%97%A5%E5%BF%97.html"><strong>日志&nbsp;(3)</strong></a>
 	        
 	        
 	        
@@ -133,9 +1055,35 @@ $(document).ready(function(event) {
 	  
 	      
 		      <li class="post">
-		        <a href="14700283558768.html">hello</a>
+		        <a href="14700365720801.html">HDFS集群配置、搭建、备份</a>
 		      </li>
 	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700365205842.html">Flume配置方案、源码修改</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700364668003.html">基于HTK的孤立词无监督识别</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700359952396.html">HDFS数据表Schema</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700356814047.html">基于HTK的孤立词有监督识别</a>
+		      </li>
+	     
+	  
+	      
 	   
 	  </ul>
 	</section>

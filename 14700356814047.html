@@ -1,0 +1,584 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>
+    
+  基于HTK的孤立词有监督识别 - 
+  
+
+  </title>
+  <meta name="author" content="">
+  <meta name="description" content="">
+
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <link href="asset/css/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="asset/js/modernizr-2.0.js"></script>
+  <script src="asset/js/jquery.min.js"></script>
+  <script src="asset/highlightjs/highlight.pack.js"></script>
+  <link href="asset/highlightjs/styles/solarized_light.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <script>hljs.initHighlightingOnLoad();</script>
+
+  <style type="text/css">
+  .cat-children-p{ padding: 6px 0px;}
+  .hljs{background: none;}
+  </style>
+  <script type="text/javascript">
+  var isAddSildbar = true;
+  </script>
+  <script src="asset/js/octopress.js" type="text/javascript"></script>
+</head>
+<script type="text/javascript">
+//链接新开窗口
+function addBlankTargetForLinks () {
+  $('a[href^="http"]').each(function(){
+      $(this).attr('target', '_blank');
+  });
+}
+$(document).ready(function(event) {
+  addBlankTargetForLinks();
+});
+</script>
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="index.html"></a></h1>
+  
+    <h2></h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="index.html">Home</a></li>
+  <li><a href="archives.html">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content"> 
+<div>
+	<article class="hentry" role="article">
+	<header>
+			  	<h1 class="entry-title">基于HTK的孤立词有监督识别</h1>
+				<p class="meta"><time datetime="2016-08-01T15:14:41+08:00" pubdate data-updated="true">2016/8/1</time></p>
+			 </header>
+		  	<div class="entry-content">
+			  	<blockquote>
+<p>训练多个模型，一个单词对应一个模型</p>
+</blockquote>
+
+<p>实现的是6个单词的识别，即：hello, world, port, starboard, standby, steer<br/><br/>
+新建八个文件夹: def, hmms, models, lab, sig, mfcc, results, test，<br/>
+<img src="http://10.0.1.215/markdown/htk_supervised_2" alt=""/></p>
+
+<h2 id="toc_0">一、数据录制与标注，涉及文件夹：sig， lab</h2>
+
+<p>在命令提示符中进入当前目录，就是上面八个文件夹所在的目录，然后进入sig目录，我们先把录制的.sig格式语音和.lab格式的标注文件放这里。先录制第一个单词，即“hello”.在命令提示符中输入：HSLab hello.sig出现录音与标注界面，按下rec录音，按下stop停止录音，然后按下mark进行标记，并对每一段标记命名（Mark后点Labelas）。前后为静音，中间为识别单词，注意，每段标记需要有一定的间隔，不能重合，否则在使用Hinit的时候会出错。标记完后点击保存，注意命名，默认是hello_0.lab和hello_1.lab,需要手动更改。如图：</p>
+
+<p><img src="http://10.0.1.215/markdown/htk_supervised_1" alt=""/></p>
+
+<p>重复录制10遍hello并标注，并用同样方法录制与标注剩余的单词各10遍。然后把sig文件夹里的.lab文件剪切到lab文件夹。hello_1.lab中的数据为：</p>
+
+<p><img src="http://10.0.1.215/markdown/htk_supervised_label" alt=""/></p>
+
+<h2 id="toc_1">二、 原始语音文件转换为特征矢量文件，涉及文件夹： sig，lab，mfcc，test</h2>
+
+<h3 id="toc_2">1. 在test文件夹中新建analysis.conf文件，内容为：</h3>
+
+<pre><code class="language-shell">SOURCEFORMAT=HTK  
+TARGETKIND=MFCC_0_D_A  
+WINDOWSIZE=250000.0  
+TARGETRATE=100000.0  
+NUMCEPS=12  
+USEHAMMING=T  
+PREEMCOEF=0.97  
+NUMCHANS=26  
+CEPLIFTER=22  
+</code></pre>
+
+<h3 id="toc_3">2. 在def文件夹中新建targetlist.txt，内容为（由于有6个单词，每个单词有10条，共60条，故这里列出了前10条，即hello的转换，以这个格式复制5遍，把hello替换成其他单词即可）:</h3>
+
+<pre><code class="language-shell">sig/hello_1.sig mfcc/hello_1.mfcc  
+sig/hello_2.sig mfcc/hello_2.mfcc  
+sig/hello_3.sig mfcc/hello_3.mfcc  
+sig/hello_4.sig mfcc/hello_4.mfcc  
+sig/hello_5.sig mfcc/hello_5.mfcc  
+sig/hello_6.sig mfcc/hello_6.mfcc  
+sig/hello_7.sig mfcc/hello_7.mfcc  
+sig/hello_8.sig mfcc/hello_8.mfcc  
+sig/hello_9.sig mfcc/hello_9.mfcc  
+sig/hello_10.sig mfcc/hello_10.mfcc
+</code></pre>
+
+<p>然后输入命令：</p>
+
+<pre><code class="language-shell">Hcopy -A -D -C test/analysis.conf -S def/targetlist.txt
+</code></pre>
+
+<p>出现的界面为：<br/>
+<img src="http://10.0.1.215/markdown/htk_supervised_copy" alt=""/></p>
+
+<p>然后在mfcc文件夹中出现.mfcc文件，如图：</p>
+
+<p><img src="http://10.0.1.215/markdown/htk_supervised_mfcc" alt=""/></p>
+
+<h2 id="toc_4">三、 建立HMM模型，涉及文件夹：models，test，hmms，lab</h2>
+
+<h3 id="toc_5">1. 在models文件夹中新建7个文件，即：hmm_hello, hmm_world, hmm_port, hmm_starboard, hmm_standby, hmm_steer, hmm_sil</h3>
+
+<p>在hmm_hello文件中输入如下内容：</p>
+
+<pre><code class="language-shell">~o &lt;VecSize&gt; 39 &lt;MFCC_0_D_A&gt; 
+~h &quot;hello&quot; 
+&lt;BeginHMM&gt; 
+&lt;NumStates&gt; 10 
+&lt;State&gt; 2  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 3  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 4  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 5 
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 6  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 7  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 8  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;State&gt; 9  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;TransP&gt; 10 
+0.0 1.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.5 0.5 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.5 0.5 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.5 0.5 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.5 0.5 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.5 0.5 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;EndHMM&gt;
+</code></pre>
+
+<p>其他5个单词只需把~h”hello”中的hello替换即可。<br/>
+sil即静音模型，在hmm_sil中输入如下内容：</p>
+
+<pre><code class="language-shell">~o &lt;VecSize&gt; 39 &lt;MFCC_0_D_A&gt; 
+~h &quot;sil&quot; 
+&lt;BeginHMM&gt; 
+&lt;NumStates&gt; 3 
+&lt;State&gt; 2  
+&lt;Mean&gt; 39 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 
+&lt;Variance&gt; 39 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
+&lt;TransP&gt; 3 
+0.0 1.0 0.0 
+0.0 0.5 0.5 
+0.0 0.0 0.0 
+&lt;EndHMM&gt;
+</code></pre>
+
+<h3 id="toc_6">2. hmm初始化</h3>
+
+<p>在test文件夹中新建trainlist.txt文件，内容为（这里只列出了hello的10条，其他5个单词复制5遍替换hello即可）：</p>
+
+<pre><code class="language-shell">mfcc/hello_1.mfcc
+mfcc/hello_2.mfcc
+mfcc/hello_3.mfcc
+mfcc/hello_4.mfcc
+mfcc/hello_5.mfcc
+mfcc/hello_6.mfcc
+mfcc/hello_7.mfcc
+mfcc/hello_8.mfcc
+mfcc/hello_9.mfcc
+mfcc/hello_10.mfcc
+</code></pre>
+
+<p>在hmms文件夹中新建hmm0文件夹，然后执行命令：</p>
+
+<pre><code class="language-shell">Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_hello –l hello –L lab hello
+Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_world –l world –L lab world
+Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_port –l port –L lab port
+Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_starboard –l starboard –L lab starboard
+Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_standby –l standby –L lab standby
+Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_steer –l steer –L lab steer
+Hinit -A -D -T 1 -S test/trainlist.txt -M hmms/hmm0 –H models/hmm_sil –l sil–L lab sil
+</code></pre>
+
+<p>初始化hello完成界面如图:</p>
+
+<p>所有单词初始化完成后我们可以在hmm0文件夹中得到对应的模型文件。这一步很容易出错，如果出错请检查数据标注的时候是否有重合。</p>
+
+<h3 id="toc_7">3. 如果初始化成功，则可以进行hmm训练</h3>
+
+<p>在hmms中新建三个文件夹,hmm1,hmm2,hmm3<br/>
+使用命令:</p>
+
+<pre><code class="language-shell">HRest -A -D -T 1 -S test/trainlist.txt -M hmms/hmm1 -H hmms/hmm0/hmm_hello  -l hello  -L lab hello  
+HRest -A -D -T 1 -S test/trainlist.txt -M hmms/hmm2 -H hmms/hmm1/hmm_hello  -l hello  -L lab hello  
+HRest -A -D -T 1 -S test/trainlist.txt -M hmms/hmm3 -H hmms/hmm2/hmm_hello  -l hello  -L lab hello 
+</code></pre>
+
+<p>这里只列出hello的训练，其他单词与sil的训练只需把hello替换成相应单词和sil即可。<br/>
+最后我们可以在hmm3文件中得到模型文件。</p>
+
+<h2 id="toc_8">四、 建立语法规则与字典，涉及文件夹：def</h2>
+
+<h3 id="toc_9">1. 在def文件夹中新建gram.txt文件，输入语法：</h3>
+
+<pre><code class="language-shell">$WORD=HELLO | WORLD | PORT | STARBOARD | STANDBY | STEER;  
+({START_SIL}[$WORD]{END_SIL})  
+</code></pre>
+
+<h3 id="toc_10">2. 在def文件夹中新建dict.txt文件，输入字典：</h3>
+
+<pre><code class="language-shell">HELLO [hello] hello  
+WORLD [world] world  
+PORT [port] port  
+STARBOARD [starboard] starboard  
+STANDBY [standby] standby  
+STEER [steer] steer  
+START_SIL [sil] sil  
+END_SIL [sil] sil  
+</code></pre>
+
+<h3 id="toc_11">3. 建立任务网络</h3>
+
+<p>输入命令：</p>
+
+<pre><code class="language-shell">Hparse -A -D -T 1 def/gram.txt def/net.slf
+</code></pre>
+
+<p>在def文件中生成了net.slf文件，其内容形式如下：</p>
+
+<p><img src="http://10.0.1.215/markdown/htk_supervised_net" alt=""/></p>
+
+<h2 id="toc_12">五、识别,涉及文件夹：def, hmms, models, test，results</h2>
+
+<h3 id="toc_13">1. 在results文件夹中新建reco.mlf文件</h3>
+
+<h3 id="toc_14">2. 在test文件夹中新建hmmsdef.mmf文件，其内容为hmms/hmm3文件夹中的所有hmm_xxx的数据，注意：在第一个复制进去的hmm_xxx为全部数据，剩下的从第一行的~h开始复制，也就是说只保留第一个~o。</h3>
+
+<h3 id="toc_15">3. 此时可以用一个.mfcc文件进行测试，先在test文件中新建一个hmmlist.txt文件，内容为：</h3>
+
+<pre><code class="language-shell">hello  
+world  
+port  
+starboard  
+standby  
+steer  
+sil  
+</code></pre>
+
+<p>命令为：</p>
+
+<pre><code class="language-shell">Hvite -A -D -T 1 -H test/hmmsdef.mmf -i result/reco.mlf -w def/net.slf def/dict.txt test/hmmlist.txt mfcc /hello_1.mfcc
+</code></pre>
+
+<h3 id="toc_16">4. 交互识别</h3>
+
+<p>在test文件夹中新建directin.conf文件，内容为：</p>
+
+<pre><code class="language-shell">SOURCERATE=625.0    
+SOURCEKIND=HAUDIO  
+SOURCEFORMAT=HTK    
+TARGETKIND=MFCC_0_D_A  
+WINDOWSIZE=250000.0  
+TARGETRATE=100000.0  
+NUMCEPS=12  
+USEHAMMING=T  
+PREEMCOEF=0.97  
+NUMCHANS=26  
+CEPLIFTER=22  
+AUDIOSIG=-1  
+</code></pre>
+
+<p>输入命令：</p>
+
+<pre><code class="language-shell">HVite -A -D -T 1 -C test/directin.conf -g -H test/hmmsdef.mmf -w def/net.slf def/dict.txt test/hmmlist.txt
+</code></pre>
+
+<p><img src="http://10.0.1.215/markdown/htk_supervised_interact" alt=""/><br/>
+可以动态识别说话的结果，未测试。</p>
+
+<h2 id="toc_17">六、 性能评价，涉及文件夹：test，results</h2>
+
+<h3 id="toc_18">1. 在test文件夹中新建文件ref.mlf，输入内容形如下列（这里只列举hello，每个单词选3个.lab文件即可）：</h3>
+
+<pre><code class="language-shell">#!MLF!#  
+&quot;lab/hello_1.lab&quot;  
+20625 5693750   
+sil  
+5778750 10477500 hello  
+10562500 14500000 sil  
+  
+&quot;lab/hello_2.lab&quot;  
+20625 4995000 sil  
+5058750 12975625 hello  
+13039375 14500000 sil  
+  
+&quot;lab/hello_3.lab&quot;  
+20625 5333750 sil  
+5397500 10520000 hello  
+10541250 14500000 sil  
+</code></pre>
+
+<h3 id="toc_19">2. 在test文件夹中新建testlist.txt文件，用以创建测试路径，内容形如下列：</h3>
+
+<pre><code class="language-shell">test/mfcc/hello_1.mfcc  
+test/mfcc/hello_2.mfcc  
+test/mfcc/hello_3.mfcc  
+test/mfcc/world_1.mfcc  
+test/mfcc/world_2.mfcc  
+test/mfcc/world_3.mfcc  
+test/mfcc/port_1.mfcc  
+test/mfcc/port_2.mfcc  
+test/mfcc/port_3.mfcc  
+test/mfcc/starboard_1.mfcc  
+test/mfcc/starboard_2.mfcc  
+test/mfcc/starboard_3.mfcc  
+test/mfcc/standby_1.mfcc  
+test/mfcc/standby_2.mfcc  
+test/mfcc/standby_3.mfcc  
+test/mfcc/steer_1.mfcc  
+test/mfcc/steer_2.mfcc  
+test/mfcc/steer_3.mfcc 
+</code></pre>
+
+<h3 id="toc_20">3. 使用命令：</h3>
+
+<pre><code class="language-shell">HVite -A -D -T 1 -S test/testlist.txt -H test/hmmsdef.mmf -i results/reco.mlf -w def/net.slf def/dict.txt test/hmmlist.txt 
+</code></pre>
+
+<p>完成界面为：<br/>
+<img src="http://10.0.1.215/markdown/htk_supervised_result" alt=""/><br/>
+results文件中的reco.mlf就保存了结果</p>
+
+<h3 id="toc_21">4. 错误率统计</h3>
+
+<p>在test文件夹中新建labellist.txt文件，内容为：</p>
+
+<pre><code class="language-shell">lab/hello_1.lab  
+lab/hello_2.lab  
+lab/hello_3.lab  
+lab/world_1.lab  
+lab/world_2.lab  
+lab/world_3.lab  
+lab/port_1.lab  
+lab/port_2.lab  
+lab/port_3.lab  
+lab/starboard_1.lab  
+lab/starboard_2.lab  
+lab/starboard_3.lab  
+lab/standby_1.lab  
+lab/standby_2.lab  
+lab/standby_3.lab  
+lab/steer_1.lab  
+lab/steer_2.lab  
+lab/steer_3.lab 
+</code></pre>
+
+<p>然后使用命令：</p>
+
+<pre><code class="language-shell">HResults -I test/ref.mlf  test/labellist.txt results/reco.mlf 
+</code></pre>
+
+<p>得到错误率统计界面：<br/>
+<img src="http://10.0.1.215/markdown/htk_supervised_statistic" alt=""/><br/>
+SENT: %Correct=94.44 为句子识别率，WORD:%Corr=98.11为单词识别率。</p>
+
+<h2 id="toc_22">七、 文件</h2>
+
+<pre><code class="language-shell">wget http://10.0.1.215/htk/htk_singleword.tar.gz
+</code></pre>
+
+			</div>
+
+		
+	  
+		<footer>
+		 <p class="meta">
+
+			<strong>Categories:</strong>&nbsp; 
+			<span class="categories">
+			
+			    <a class='category' href='%E7%AC%94%E8%AE%B0.html'>笔记</a>&nbsp;
+			 
+			</span>
+		    </p>
+		    <p class="meta">
+		      
+		 </p>
+	    
+		<div class="sharing">
+			
+		</div>
+
+	    <p class="meta">
+	    
+	        <a class="basic-alignment left" href="14700359952396.html" 
+	        title="Previous Post: HDFS数据表Schema">&laquo; HDFS数据表Schema</a>
+	    
+	    
+	        <a class="basic-alignment right" href="14700283558768.html" 
+	        title="Next Post: Kaldi 笔记">Kaldi 笔记 &raquo;</a>
+	    
+	    </p>
+	  </footer>
+	</article>
+</div>
+ <aside class="sidebar"> 
+
+	<section>
+	  <h1>Categories</h1>
+	  <ul id="recent_posts">
+	  
+	      <li class="post">
+	        <a href="%E7%AC%94%E8%AE%B0.html"><strong>笔记&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	  
+	      <li class="post">
+	        <a href="%E6%97%A5%E5%BF%97.html"><strong>日志&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	   
+	  </ul>
+	</section>
+	<section>
+	  <h1>Recent Posts</h1>
+	  <ul id="recent_posts">
+	  
+	      
+		      <li class="post">
+		        <a href="14700365720801.html">HDFS集群配置、搭建、备份</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700365205842.html">Flume配置方案、源码修改</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700364668003.html">基于HTK的孤立词无监督识别</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700359952396.html">HDFS数据表Schema</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700356814047.html">基于HTK的孤立词有监督识别</a>
+		      </li>
+	     
+	  
+	      
+	   
+	  </ul>
+	</section>
+	
+</aside> </div></div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 -  -
+  <span class="credit">Powered by <a target="_blank" href="http://www.mweb.im">MWeb</a> &nbsp;&nbsp; Theme by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+
+
+
+</body>
+</html>

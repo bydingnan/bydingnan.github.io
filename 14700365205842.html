@@ -1,0 +1,477 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>
+    
+  Flume配置方案、源码修改 - 
+  
+
+  </title>
+  <meta name="author" content="">
+  <meta name="description" content="">
+
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <link href="asset/css/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="atom.xml" rel="alternate" title="" type="application/atom+xml">
+  <script src="asset/js/modernizr-2.0.js"></script>
+  <script src="asset/js/jquery.min.js"></script>
+  <script src="asset/highlightjs/highlight.pack.js"></script>
+  <link href="asset/highlightjs/styles/solarized_light.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <script>hljs.initHighlightingOnLoad();</script>
+
+  <style type="text/css">
+  .cat-children-p{ padding: 6px 0px;}
+  .hljs{background: none;}
+  </style>
+  <script type="text/javascript">
+  var isAddSildbar = true;
+  </script>
+  <script src="asset/js/octopress.js" type="text/javascript"></script>
+</head>
+<script type="text/javascript">
+//链接新开窗口
+function addBlankTargetForLinks () {
+  $('a[href^="http"]').each(function(){
+      $(this).attr('target', '_blank');
+  });
+}
+$(document).ready(function(event) {
+  addBlankTargetForLinks();
+});
+</script>
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="index.html"></a></h1>
+  
+    <h2></h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="index.html">Home</a></li>
+  <li><a href="archives.html">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content"> 
+<div>
+	<article class="hentry" role="article">
+	<header>
+			  	<h1 class="entry-title">Flume配置方案、源码修改</h1>
+				<p class="meta"><time datetime="2016-08-01T15:28:40+08:00" pubdate data-updated="true">2016/8/1</time></p>
+			 </header>
+		  	<div class="entry-content">
+			  	<h1 id="toc_0">一 配置</h1>
+
+<h2 id="toc_1">1.1 client端</h2>
+
+<p>client端采用avro-client的方式，定时向server发送数据，并附送headerFile，目前看这种方式更灵活，也符合数据业务的需求。</p>
+
+<p><strong>运行demo</strong></p>
+
+<pre><code class="language-shell">export JAVA_HOME=/home/talkmate/softwares/jdk1.8.0_91
+
+dir_array=(UserRegister UserLogin UserPasswordForgot UserCourseBuy) 
+
+for dir in ${dir_array[@]}
+do
+    if [ -d /home/talkmate/Deploy/daily_log/data/$dir ];then
+        rm /home/talkmate/Deploy/daily_log/data/$dir/*.COMPLETED
+        ./bin/flume-ng avro-client -H localhost -p 44444 --dirname /home/talkmate/Deploy/daily_log/data/$dir --headerFile header/$dir -D    flume.root.logger=DEBUG,console --conf conf
+        sleep 2
+    fi
+done
+</code></pre>
+
+<p><strong>headerFile demo</strong></p>
+
+<p>header/CourseInfo</p>
+
+<pre><code class="language-shell">field=CourseInfo
+</code></pre>
+
+<p><strong>conf/flume-env.sh</strong>  </p>
+
+<p>Java默认GC为20M 不设置此选项会导致内存频繁溢出，conf路径要包含在 --conf 选项中</p>
+
+<pre><code class="language-shell">26 export JAVA_OPTS=&quot;-Xms2048m -Xmx3072m -Xss256k -Xmn2g -XX:+UseParNewGC -XX:+UseConcMarkSweepGC -XX:-UseGCOverheadLimit&quot;
+</code></pre>
+
+<h2 id="toc_2">1.2 server端</h2>
+
+<p>接收端采用的是avro source、file channel和hdfs sink，具体配置如下</p>
+
+<pre><code class="language-shell">#初始化
+agent1.sources = source_db
+agent1.sinks = sink_CourseInfo
+agent1.channels = channel_CourseInfo
+
+#配置source
+agent1.sources.source_db.type = avro
+agent1.sources.source_db.bind = localhost
+agent1.sources.source_db.port = 55555
+agent1.sources.source_db.channels = channel_CourseInfo
+
+#根据头文件信息分发数据
+agent1.sources.source_db.selector.type = multiplexing
+agent1.sources.source_db.selector.header = field
+agent1.sources.source_db.selector.mapping.CourseInfo = channel_CourseInfo
+agent1.sources.source_db.selector.mapping.CourseInfoDetail = channel_CourseInfoDetail
+
+#hdfs sink
+agent1.sinks.sink_CourseInfo.type = hdfs
+agent1.sinks.sink_CourseInfo.hdfs.path = hdfs://NameNode:8020/talkmate/db/course_info
+agent1.sinks.sink_CourseInfo.hdfs.rollInterval = 0
+agent1.sinks.sink_CourseInfo.hdfs.fileType = DataStream
+agent1.sinks.sink_CourseInfo.hdfs.rollSize = 50000000
+agent1.sinks.sink_CourseInfo.hdfs.batchSize = 2000
+agent1.sinks.sink_CourseInfo.hdfs.rollCount = 100000
+agent1.sinks.sink_CourseInfo.hdfs.useLocalTimeStamp = true
+agent1.sinks.sink_CourseInfo.hdfs.writeFormat = Text
+agent1.sinks.sink_CourseInfo.hdfs.filePrefix = course_info
+agent1.sinks.sink_CourseInfo.hdfs.inUseSuffix = .tmp
+agent1.sinks.sink_CourseInfo.hdfs.idleTimeout = 30
+
+#file channel
+agent1.channels.channel_CourseInfo.type = file
+agent1.channels.channel_CourseInfo.checkpointDir = /home/talkmate/Deploy/fchannel/CourseInfo/checkpoint
+agent1.channels.channel_CourseInfo.dataDirs = /home/talkmate/Deploy/fchannel/CourseInfo/data
+agent1.channels.channel_CourseInfo.capacity = 1000000
+agent1.channels.channel_CourseInfo.keep-alive = 30
+agent1.channels.channel_CourseInfo.transactionCapacity = 2000
+agent1.channels.channel_CourseInfo.write-timeout = 30
+agent1.channels.channel_CourseInfo.checkpoint-timeout=600
+
+#bind sink to channel
+agent1.sinks.sink_CourseInfo.channel = channel_CourseInfo
+</code></pre>
+
+<p><strong>说明</strong>  </p>
+
+<ul>
+<li>一个event就是一条数据<br/></li>
+<li>batchSize flush的event数量<br/></li>
+<li>rollSize 文件滚动的最大上限<br/></li>
+<li>rollCount 文件滚动的最大event数量<br/></li>
+<li>idleTimeout 若无写事件，在改时间(s)后关闭文件<br/></li>
+<li>capacity 越大越好，小了会内存溢出<br/></li>
+<li>transactionCapacity 和 batchSize 最好一样大<br/></li>
+</ul>
+
+<p><strong>启动服务</strong>  </p>
+
+<pre><code class="language-shell">/bin/flume-ng agent -n agent1 -c ./conf -f ./conf/hdfs_server.conf  &gt; logs/runtime.log 2&gt;&amp;1
+</code></pre>
+
+<h1 id="toc_3">二 源码修改</h1>
+
+<h2 id="toc_4">2.1 解决乱码后传输中断问题</h2>
+
+<p>文件：<code>flume-ng-core/src/main/java/org/apache/flume/serialization/ResettableFileInputStream.java</code><br/><br/>
+函数：<code>readChar()</code>  </p>
+
+<pre><code class="language-java">216     } else {
+217         if(isEndOfInput) {
+218             incrPosition(delta, false);
+219             logger.info(&quot;End of File.&quot;);
+220             return -1;//end of file
+221         } else{
+222             incrPosition(1, false);
+223             buf.clear();
+224             buf.flip();
+225             refillBuf();
+226             logger.warn(&quot;May have special characters.&quot;);
+227             return 32;//a partial character of space
+228         }
+229     }
+</code></pre>
+
+<p>检测到异常字符不是退出，而是返回一个空格(32 的Ascii）</p>
+
+<h2 id="toc_5">2.2 解决数据单行字符长度过长导致的被截断成两行的问题</h2>
+
+<p>文件：<code>flume-ng-core/src/main/java/org/apache/flume/serialization/LineDeserializer.java</code><br/><br/>
+变量：<code>MAXLINE_DFLT</code></p>
+
+<pre><code class="language-java">53   public static final int MAXLINE_DFLT = 20480;
+</code></pre>
+
+<h2 id="toc_6">2.3 HDFS sink的文件滚动配置不生效问题</h2>
+
+<p>文件：<code>flume-ng-sinks/flume-hdfs-sink/src/main/java/org/apache/flume/sink/hdfs/AbstractHDFSWriter.java</code><br/><br/>
+函数：<code>isUnderReplicated()</code></p>
+
+<pre><code class="language-java">82   public boolean isUnderReplicated() {
+83     try {
+84       int numBlocks = getNumCurrentReplicas();
+85       if (numBlocks == -1) {
+86         return false;
+87       }
+88       int desiredBlocks;
+89       if (configuredMinReplicas != null) {
+90         desiredBlocks = configuredMinReplicas;
+91       } else {
+92         desiredBlocks = getFsDesiredReplication();
+93       }
+94       return false;
+95       //return numBlocks &lt; desiredBlocks;
+</code></pre>
+
+<h2 id="toc_7">2.3 自定义HDFS文件后缀的Index</h2>
+
+<p>文件：<code>flume-ng-sinks/flume-hdfs-sink/src/main/java/org/apache/flume/sink/hdfs/BucketWriter.java</code></p>
+
+<pre><code class="language-java">117   AtomicInteger renameTries = new AtomicInteger(0);
+</code></pre>
+
+<h2 id="toc_8">2.4 avro-client 参数设置</h2>
+
+<p>文件：<code>flume-ng-core/src/main/java/org/apache/flume/client/avro/AvroCLIClient.java</code></p>
+
+<pre><code class="language-java">56   private static final int BATCH_SIZE = 200;
+57   private static final int MAX_LINE_LENGTH = 20480;
+</code></pre>
+
+<h2 id="toc_9">2.5 时间戳解析优化</h2>
+
+<p>文件：<code>flume-ng-sinks/flume-hdfs-sink/src/main/java/org/apache/flume/sink/hdfs/HDFSEventSink.java</code>  </p>
+
+<p>import</p>
+
+<pre><code class="language-java">33 import java.text.SimpleDateFormat;
+</code></pre>
+
+<p>定义两个时间变量</p>
+
+<pre><code class="language-java">144     private SimpleDateFormat sdfPath = null;        //for file in hdfs path
+145     private SimpleDateFormat sdfName = null;        //for file name prefix
+</code></pre>
+
+<p>configure函数</p>
+
+<pre><code class="language-java">206     filePathFormat =  context.getString(&quot;hdfs.path.format&quot;, &quot;yyyyMMdd&quot;);        //time&#39;s format ps:&quot;yyyy-MM-dd&quot;
+207     sdfPath = new SimpleDateFormat(filePathFormat);
+208
+209     fileName = context.getString(&quot;hdfs.filePrefix&quot;, defaultFileName);
+210     fileNameFormat = context.getString(&quot;hdfs.filePrefix.format&quot;, &quot;HHmm&quot;);
+211     sdfName = new SimpleDateFormat(fileNameFormat);
+212
+213     addSaveTime = context.getBoolean(&quot;hdfs.addSaveTime&quot;, false);     //是否在hdfs文件中加入小时
+</code></pre>
+
+<p>增加获取时间格式函数</p>
+
+<pre><code class="language-java">376   public String getTime(String type, long timestamp) {
+377       String time = &quot;&quot;;
+378       if(type.equals(&quot;name&quot;))
+379           time = sdfName.format(timestamp);
+380       else if(type.equals(&quot;path&quot;))
+381           time = sdfPath.format(timestamp);
+382       return time;
+383   }
+</code></pre>
+
+<p>process()函数 修改重命名bucket</p>
+
+<pre><code class="language-java">411         String realPath = filePath;
+412         String realName = fileName;
+413         realPath += DIRECTORY_DELIMITER + getTime(&quot;path&quot;, System.currentTimeMillis());
+414         if (addSaveTime) {
+415             realName += &quot;.&quot; + getTime(&quot;name&quot;, System.currentTimeMillis());
+416         }
+</code></pre>
+
+<h2 id="toc_10">2.6 编译</h2>
+
+<pre><code class="language-shell">mvn install -DskipTests -Dtar
+</code></pre>
+
+<p>生成结果</p>
+
+<pre><code class="language-shell">apache-flume-1.6.0-src/flume-ng-dist/target/
+</code></pre>
+
+<h1 id="toc_11">三 部署脚本</h1>
+
+<h2 id="toc_12">3.1 daily_log</h2>
+
+<pre><code class="language-shell"> 20 scp dingnan@test.200h.com:/var/log/daily_log/last_timestamp .
+ 21 saved_timestamp=`cat saved_timestamp`
+ 22 last_timestamp=`cat last_timestamp`
+ 23 categary_map=()
+ 24 dir_map=()
+ 25
+ 26 if [ $last_timestamp -gt $saved_timestamp ];then
+ 27     scp dingnan@test.200h.com:/var/log/daily_log/*$last_timestamp* raw_data/
+ 28     #更新timestamp
+ 29     echo $last_timestamp &gt; saved_timestamp
+ 30 fi
+ 31
+ 32 index=0
+ 33 for line in `cat mapping_file`
+ 34 do
+ 35     categary=`echo $line | cut -d &quot;_&quot; -f 1,2`
+ 36     dir_name=`echo $line | cut -d &quot;_&quot; -f 3`
+ 37     categary_map[$index]=$categary
+ 38     dir_map[$index]=$dir_name
+ 39     ((index++))
+ 40 done
+ 41
+ 42 #parse
+ 43 for file_name in `ls raw_data`
+ 44 do
+ 45     categary=`echo $file_name | cut -d &quot;_&quot; -f 1,2`
+ 46     index=0
+ 47     for cate in ${categary_map[@]}
+ 48     do
+ 49         if [ &quot;$cate&quot; == &quot;$categary&quot; ];then
+ 50             path=data/${dir_map[$index]}
+ 51
+ 52             if [ ! -d $path ];then
+ 53                 mkdir -p $path
+ 54             fi
+ 55             sed &#39;s/\[\^A\]/\t/g&#39; raw_data/$file_name &gt; $path/$file_name
+ 56             break
+ 57         else
+ 58             ((index++))
+ 59         fi
+ 60     done
+ 61 done
+</code></pre>
+
+<p>如要解决ssh连接访问慢的问题，在ssh连接的一方，配置中关闭GSSAPIAuthentication  </p>
+
+<p>/etc/ssh/ssh_config</p>
+
+<pre><code class="language-shell">GSSAPIAuthentication no
+</code></pre>
+
+			</div>
+
+		
+	  
+		<footer>
+		 <p class="meta">
+
+			<strong>Categories:</strong>&nbsp; 
+			<span class="categories">
+			
+			    <a class='category' href='%E6%97%A5%E5%BF%97.html'>日志</a>&nbsp;
+			 
+			</span>
+		    </p>
+		    <p class="meta">
+		      
+		 </p>
+	    
+		<div class="sharing">
+			
+		</div>
+
+	    <p class="meta">
+	    
+	        <a class="basic-alignment left" href="14700365720801.html" 
+	        title="Previous Post: HDFS集群配置、搭建、备份">&laquo; HDFS集群配置、搭建、备份</a>
+	    
+	    
+	        <a class="basic-alignment right" href="14700364668003.html" 
+	        title="Next Post: 基于HTK的孤立词无监督识别">基于HTK的孤立词无监督识别 &raquo;</a>
+	    
+	    </p>
+	  </footer>
+	</article>
+</div>
+ <aside class="sidebar"> 
+
+	<section>
+	  <h1>Categories</h1>
+	  <ul id="recent_posts">
+	  
+	      <li class="post">
+	        <a href="%E7%AC%94%E8%AE%B0.html"><strong>笔记&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	  
+	      <li class="post">
+	        <a href="%E6%97%A5%E5%BF%97.html"><strong>日志&nbsp;(3)</strong></a>
+	        
+	        
+	        
+	      </li>
+	   
+	  </ul>
+	</section>
+	<section>
+	  <h1>Recent Posts</h1>
+	  <ul id="recent_posts">
+	  
+	      
+		      <li class="post">
+		        <a href="14700365720801.html">HDFS集群配置、搭建、备份</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700365205842.html">Flume配置方案、源码修改</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700364668003.html">基于HTK的孤立词无监督识别</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700359952396.html">HDFS数据表Schema</a>
+		      </li>
+	     
+	  
+	      
+		      <li class="post">
+		        <a href="14700356814047.html">基于HTK的孤立词有监督识别</a>
+		      </li>
+	     
+	  
+	      
+	   
+	  </ul>
+	</section>
+	
+</aside> </div></div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 -  -
+  <span class="credit">Powered by <a target="_blank" href="http://www.mweb.im">MWeb</a> &nbsp;&nbsp; Theme by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+
+
+
+</body>
+</html>
